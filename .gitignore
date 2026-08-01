@@ -1,0 +1,12 @@
+# Upstream LineageOS device trees.
+#
+# These are unmodified clones of LineageOS/android_device_samsung_beyond2lte and
+# android_device_samsung_exynos9820-common, kept locally only so the sync script
+# has something to compare against. The build machine fetches them with `repo`,
+# so tracking them here would duplicate upstream for no benefit.
+/device/
+
+# Build and sync artefacts
+*.tgz
+*.log
+out/
