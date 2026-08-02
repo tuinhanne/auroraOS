@@ -30,6 +30,11 @@ java_library {
     sdk_version: "core_current",
     host_supported: true,
     installable: false,
+    // Soong cannot express "runtime must not depend on platform", but it can say
+    // who may depend on a module at all. This keeps the layers from being reached
+    // into from elsewhere in the tree. Sprint 03 will widen aurora-platform only,
+    // when a product needs to install it; sdk and runtime stay restricted.
+    visibility: ["//frameworks/base/aurora:__subpackages__"],
 }
 
 // ---------------------------------------------------------------------------
@@ -44,13 +49,14 @@ java_library {
     sdk_version: "core_current",
     host_supported: true,
     installable: false,
+    visibility: ["//frameworks/base/aurora:__subpackages__"],
 }
 
 // ---------------------------------------------------------------------------
 // Layer 3: aurora.platform
 //
 // System integration layer. This is the only layer that will be allowed to
-// reach into android.* once Sprint 02 wires Aurora into the platform.
+// reach into android.* once Sprint 03 wires Aurora into the platform.
 // ---------------------------------------------------------------------------
 java_library {
     name: "aurora-platform",
@@ -59,6 +65,7 @@ java_library {
     sdk_version: "core_current",
     host_supported: true,
     installable: false,
+    visibility: ["//frameworks/base/aurora:__subpackages__"],
 }
 
 // ---------------------------------------------------------------------------
