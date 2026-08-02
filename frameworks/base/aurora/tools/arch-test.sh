@@ -83,6 +83,45 @@ check_aurora_layering() {
   [ "$violation" -eq 0 ] && ok "$layer: all aurora.* imports are within the allowed layers"
 }
 
+# Print the Android.bp block whose name: field matches $1.
+module_block() {
+  awk -v want="\"$1\"" '
+    /^[a-z_]+ \{/        { block = ""; inblock = 1 }
+    inblock              { block = block $0 "\n" }
+    inblock && /^\}/     { if (block ~ ("name: *" want)) printf "%s", block; inblock = 0 }
+  ' "$AURORA_DIR/Android.bp"
+}
+
+check_soong_deps() {
+  local contract="$1"
+  local layer module block dep
+  layer="$(value_of layer "$contract")"
+  module="$(value_of module "$contract")"
+  block="$(module_block "$module")"
+
+  if [ -z "$block" ]; then
+    skip "$layer: no Soong module named $module"
+    return
+  fi
+
+  local bad=0
+  while IFS= read -r dep; do
+    [ -z "$dep" ] && continue
+    if grep -qE "\"$dep\"" <<< "$block"; then
+      fail "$module declares forbidden dependency '$dep'"
+      bad=1
+    fi
+  done < <(values_of forbid-dep "$contract")
+  [ "$bad" -eq 0 ] && ok "$module: no forbidden Soong dependency"
+
+  # sdk_version must stay core_current until a contract says otherwise.
+  if grep -q 'sdk_version: "core_current"' <<< "$block"; then
+    ok "$module: sdk_version is core_current"
+  else
+    fail "$module: sdk_version is not core_current - the classpath guarantee is gone"
+  fi
+}
+
 main() {
   echo "Aurora architecture test"
   echo "contracts: $CONTRACTS_DIR"
@@ -92,6 +131,7 @@ main() {
     echo "--- $(basename "$contract") ---"
     check_forbidden_imports "$contract"
     check_aurora_layering "$contract"
+    check_soong_deps "$contract"
     echo
   done
 
