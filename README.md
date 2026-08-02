@@ -110,6 +110,27 @@ Seven service contracts under `aurora.sdk.service`: animation, theme, notificati
 volume, power and island. Contracts only — no implementation exists yet, and every accessor on
 `AuroraRuntime` fails with a message naming the missing service.
 
+**Sprint 05 — Event bus: complete.**
+
+| Exit criterion | Result |
+|---|---|
+| 100% tests pass | 84 passing, up from 54 |
+| Compile | `m aurora-sdk aurora-runtime aurora-platform` rc=0 |
+| Architecture wall intact | `arch-test.sh` 27 checks, 0 failures |
+
+Scoped, prioritised publish/subscribe under `aurora.sdk.event`. Beyond plain publish and
+subscribe it carries three things that are painful to retrofit: sticky events, so a surface
+created after a state change still starts in the right state; scopes, which are lifetimes as
+much as filters, so closing a window retires its subscribers and sticky values in one call;
+and `Disposable` handles instead of `unsubscribe(id)`, so whatever holds a subscription holds
+the only thing needed to end it.
+
+Subscribers are isolated from each other — a throwing one cannot stop the rest — and the
+`AuroraDispatcher` seam decides where they run, which is what will let the platform post to the
+main thread later without this module knowing that a main thread exists.
+
+---
+
 The interfaces live in `aurora.sdk` rather than beside their future implementations because
 `aurora.runtime` is forbidden from importing `aurora.platform`. `ServiceProvider`, declared in
 `aurora.runtime` and implemented later by the platform, is the seam that lets the runtime hand

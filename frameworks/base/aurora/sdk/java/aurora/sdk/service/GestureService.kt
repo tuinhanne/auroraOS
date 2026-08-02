@@ -19,6 +19,30 @@ package aurora.sdk.service
 /** Screen edge a gesture starts from. */
 enum class GestureEdge { LEFT, RIGHT, TOP, BOTTOM }
 
+/**
+ * Who a gesture handler speaks for, in the order they win.
+ *
+ * An enum rather than an integer on purpose. With integers every caller invents its own
+ * number, the numbers creep upward as each new handler tries to outrank the last, and nothing
+ * records what the ordering was supposed to mean. Four named tiers say it once: the system
+ * always wins, an overlay never covers it, and an app never takes a gesture the shell needs.
+ *
+ * Declared in ordinal order, so [compareTo] gives the ranking directly.
+ */
+enum class GesturePriority {
+    /** Shell-level navigation. Back, home, recents. Nothing outranks this. */
+    SYSTEM,
+
+    /** Floating surfaces: island, panels, bubbles. Yields to the system. */
+    OVERLAY,
+
+    /** The focused application's own gestures. */
+    APP,
+
+    /** Opportunistic handlers that take a gesture only if nobody else wants it. */
+    BACKGROUND,
+}
+
 /** What stage of its life a gesture is at. */
 enum class GesturePhase {
     /** The finger crossed the activation threshold. */
@@ -71,14 +95,15 @@ interface GestureService : AuroraService {
     /**
      * Subscribes to swipes starting at [edge].
      *
-     * @param priority higher wins when several handlers want the same gesture
+     * @param priority which tier this handler belongs to; earlier tiers are offered the
+     *     gesture first
      * @param handler receives every phase of the gesture; return true to consume it and stop
      *     it reaching lower-priority handlers
      * @return a token for [unregister]
      */
     fun registerEdgeGesture(
         edge: GestureEdge,
-        priority: Int,
+        priority: GesturePriority,
         handler: (sample: GestureSample) -> Boolean,
     ): Long
 

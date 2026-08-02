@@ -127,6 +127,39 @@ Rule to preserve when extending: if a class in `sdk` or `runtime` needs to
 
 ---
 
+## Rules
+
+Numbered so they can be cited in review and in commit messages.
+
+**RULE-001 — Dependencies flow one way.** `platform` → `runtime` → `sdk` → nothing. Enforced
+by `arch-test.sh` and, for the forbidden packages, by the compiler.
+
+**RULE-002 — Android is confined to `aurora.platform`.** Only that layer may `import
+android.*`. If a class in `sdk` or `runtime` seems to need an Android type, it is in the wrong
+layer; declare an interface where it is needed and implement it where Android is allowed.
+`ServiceProvider` is the reference example.
+
+**RULE-003 — Mistakes fail loudly.** Never return a half-built object or silently do nothing
+where the caller expects work. `AuroraRuntime.getInstance()` before initialization throws,
+`AuroraServiceRegistry.register()` refuses to overwrite, and a missing service names itself in
+the exception.
+
+**RULE-004 — Design tokens never execute.** Tokens are data. `SpringToken` has no `solve()`,
+`Easing` has no `interpolate()`. They describe motion; the engine that receives them computes
+it.
+
+The reason is separation of change: a designer retunes a spring without touching the solver,
+and the solver is optimised without risking a visual change. It is also why the tokens can be
+read by Compose, the View system and XML alike — none of which would accept the same executable
+object. Compose, Flutter and SwiftUI all draw this line in the same place.
+
+The practical test: if a file under `aurora.sdk.design` grows a function that computes
+anything beyond trivial arithmetic on its own constants, it has crossed the line. `nested()`
+on `RadiusTokens` is at the boundary and is deliberately kept there — it applies a rule about
+the tokens, it does not run an animation.
+
+---
+
 ## Architecture enforcement
 
 The layering rules are not a convention; they are checked.
