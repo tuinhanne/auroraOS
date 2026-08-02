@@ -192,6 +192,56 @@ cycles, and eventually nothing can be built, tested or replaced on its own. Thro
 a publisher does not know who listens, so a subscriber can be added, faked or deleted without
 the publisher changing.
 
+**RULE-006 — `AuroraClock` is monotonic, in every implementation.** Readings never decrease:
+`t0 <= t1 <= t2`. Allowed: `advance()`, `pause()`, `resume()`. Forbidden everywhere, including
+`TestClock`: `rewind()`, `setTime()`.
+
+A test seam must not be able to produce a state production cannot. If `TestClock` could rewind,
+code could be written and proven correct against behaviour the real clock will never exhibit —
+and the use it appears to serve, seeking, is already covered: `Timeline` is stateless, so
+seeking is querying a different argument. A caller wanting a different origin constructs
+another clock. Enforced by a reflection test asserting no such method exists.
+
+**RULE-007 — Time and threading come from a seam.** In `aurora.sdk` and `aurora.runtime`,
+these are forbidden: `System.currentTimeMillis`, `System.nanoTime`, `Thread.sleep`, `Handler`,
+`Looper`, `Choreographer`. `aurora.platform` may use them; that is its job.
+
+Exactly one exemption exists: `RealtimeClock` is the single sanctioned reader of the system
+clock. Every rule of this shape needs one hole or the abstraction it protects cannot be built,
+and the hole is declared in `runtime.contract` as a `call-exemption` rather than remembered,
+because an exemption that lives in someone's head gets copied within a few sprints.
+
+Enforced by `arch-test.sh`, which scans call text rather than imports — nothing has to be
+imported to write `System.nanoTime()` — and which ignores comment lines, so documentation can
+name what it forbids.
+
+**RULE-008 — The animation engine consumes time; it never acquires it.** An animation is handed
+a `FrameTime`. It must not call a clock.
+
+```kotlin
+animation.update(System.nanoTime())  // no
+animation.update(frameTime)          // yes
+```
+
+Three practical consequences. *Determinism*: the same sequence of frames always produces the
+same output, so a failure replays exactly instead of being chased. *Coherence*: every animation
+in a frame gets the same timestamp, so long parallel transitions cannot drift apart by the
+microseconds between separate clock reads. *Testing*: frames are handed out at any spacing,
+including pathological ones, with no device and no waiting.
+
+### Time, in three tiers
+
+| Layer | Holds | Examples |
+|---|---|---|
+| `aurora.sdk.time` | concepts and contracts | `Duration`, `Timeline`, `FrameTime`, `TimeSource`, `AuroraClock`, `FrameScheduler` |
+| `aurora.runtime.time` | portable implementations | `RealtimeClock`, `TestClock`, `QueuedFrameScheduler`, `ImmediateFrameScheduler`, `TimelineDriver` |
+| `aurora.platform.time` | the Android bridge | `ChoreographerFrameScheduler` — Sprint 08 |
+
+The same split Kotlin coroutines make between `kotlinx.coroutines`, its dispatchers, and the
+Android dispatcher. Time is a *domain model*, not an implementation detail: `Duration` and
+`Timeline` know nothing of threads, loopers or Android, so they belong at the bottom where
+every layer — including service contracts in `aurora.sdk` — can name them.
+
 ### Event naming
 
 The name should say which of the two things it is, because the API cannot.

@@ -21,3 +21,12 @@ forbid-dep:     framework-minus-apex
 forbid-dep:     services
 forbid-dep:     aurora-runtime
 forbid-dep:     aurora-platform
+
+# RULE-007: time and threading must come from a seam, never from the platform
+# directly. The SDK declares those seams and therefore calls none of them itself.
+forbid-call:    System.currentTimeMillis
+forbid-call:    System.nanoTime
+forbid-call:    Thread.sleep
+forbid-call:    Choreographer
+forbid-call:    Looper
+forbid-call:    Handler(

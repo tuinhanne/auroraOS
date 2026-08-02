@@ -14,8 +14,13 @@
  * limitations under the License.
  */
 
-package aurora.sdk.time
+package aurora.runtime.time
 
+import aurora.sdk.time.AuroraClock
+import aurora.sdk.time.Duration
+import aurora.sdk.time.FrameCallback
+import aurora.sdk.time.FrameTime
+import aurora.sdk.time.Timeline
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -35,13 +40,13 @@ class TimeInfrastructureTest {
     private val ms = AuroraClock.NANOS_PER_MILLI
 
     private lateinit var clock: TestClock
-    private lateinit var scheduler: FakeFrameScheduler
+    private lateinit var scheduler: QueuedFrameScheduler
     private lateinit var driver: TimelineDriver
 
     @Before
     fun setUp() {
         clock = TestClock()
-        scheduler = FakeFrameScheduler(clock)
+        scheduler = QueuedFrameScheduler(clock)
         driver = TimelineDriver(clock, scheduler)
     }
 
@@ -305,6 +310,145 @@ class TimeInfrastructureTest {
 
         scheduler.runToIdle()
         assertEquals(1f, seen.last(), 0.0001f)
+    }
+
+    // --- RULE-006: monotonicity ----------------------------------------------
+
+    @Test
+    fun noImplementationOffersAWayToGoBackwards() {
+        // Asserted by reflection rather than by convention. A seam that can produce states
+        // production cannot produce makes every test written against it a test of a world
+        // that does not exist, so the absence of these methods is part of the contract.
+        val forbidden = setOf("rewind", "setTime", "setNanos", "reset", "rewindNanos")
+        listOf(TestClock::class.java, RealtimeClock::class.java).forEach { type ->
+            val found = type.methods.map { it.name }.filter { it in forbidden }
+            assertTrue("${type.simpleName} must not expose $found (RULE-006)", found.isEmpty())
+        }
+    }
+
+    @Test
+    fun pauseFreezesTimeWithoutMovingItBack() {
+        clock.advanceMillis(100)
+        val atPause = clock.nowNanos()
+
+        clock.pause()
+        clock.advanceMillis(500)
+
+        assertTrue(clock.isPaused)
+        assertEquals("a paused clock holds, it does not rewind", atPause, clock.nowNanos())
+
+        clock.resume()
+        clock.advanceMillis(50)
+        assertEquals(atPause + 50 * ms, clock.nowNanos())
+    }
+
+    @Test
+    fun animationMakesNoProgressWhileTheClockIsPaused() {
+        val seen = mutableListOf<Float>()
+        driver.start(Timeline.ofMillis(100), onUpdate = { seen.add(it) })
+
+        scheduler.advanceOneFrame()
+        val atPause = seen.last()
+        clock.pause()
+        scheduler.advanceFrames(3)
+
+        assertTrue("frames still arrive, but time does not move", seen.size > 1)
+        assertTrue("progress must not advance while paused", seen.all { it <= atPause })
+
+        clock.resume()
+        scheduler.runToIdle()
+        assertEquals(1f, seen.last(), 0.0001f)
+    }
+
+    // --- Duration -------------------------------------------------------------
+
+    @Test
+    fun durationCarriesItsUnit() {
+        val d = Duration.ofMillis(250)
+        assertEquals(250L, d.inMillis)
+        assertEquals(250_000_000L, d.nanos)
+        assertEquals(0.25f, d.inSeconds, 0.0001f)
+    }
+
+    @Test
+    fun durationArithmeticAndOrdering() {
+        val a = Duration.ofMillis(100)
+        val b = Duration.ofMillis(50)
+
+        assertEquals(Duration.ofMillis(150), a + b)
+        assertEquals(Duration.ofMillis(50), a - b)
+        assertEquals(Duration.ofMillis(300), a * 3)
+        assertTrue(a > b)
+        assertTrue(Duration.ZERO.isNotPositive)
+        // Negative durations are allowed: subtracting two instants can legitimately give one.
+        assertTrue((b - a).isNotPositive)
+    }
+
+    @Test
+    fun durationBetweenTwoInstants() {
+        clock.advanceMillis(30)
+        val start = clock.nowNanos()
+        clock.advanceMillis(70)
+
+        assertEquals(70L, Duration.between(start, clock.nowNanos()).inMillis)
+    }
+
+    // --- FrameTime ------------------------------------------------------------
+
+    @Test
+    fun firstFrameHasNoDelta() {
+        val f = FrameTime.first(1_000L)
+        assertTrue(f.isFirstFrame)
+        assertEquals(0L, f.deltaNanos)
+        assertEquals(0L, f.frameIndex)
+    }
+
+    @Test
+    fun nextKeepsDeltaAndIndexConsistentWithTheTimestamps() {
+        val first = FrameTime.first(0L)
+        val second = first.next(16_666_666L)
+        val third = second.next(33_333_332L)
+
+        assertEquals(16_666_666L, second.deltaNanos)
+        assertEquals(1L, second.frameIndex)
+        assertEquals(16_666_666L, third.deltaNanos)
+        assertEquals(2L, third.frameIndex)
+        assertFalse(second.isFirstFrame)
+        assertEquals(16.666666, second.deltaMillis, 0.001)
+    }
+
+    @Test
+    fun frameTimeRejectsANegativeDelta() {
+        try {
+            FrameTime(frameTimeNanos = 100L, deltaNanos = -1L, frameIndex = 1L)
+            fail("a negative delta contradicts a monotonic timebase")
+        } catch (expected: IllegalArgumentException) {
+        }
+    }
+
+    @Test
+    fun schedulerReportsFrameTimeForConsumers() {
+        // RULE-008: the engine will be handed one of these rather than reading a clock.
+        scheduler.advanceOneFrame()
+        val first = scheduler.lastFrameTime!!
+        scheduler.advanceOneFrame()
+        val second = scheduler.lastFrameTime!!
+
+        assertEquals(0L, first.deltaNanos)
+        assertEquals(scheduler.frameIntervalNanos, second.deltaNanos)
+        assertEquals(1L, second.frameIndex)
+    }
+
+    // --- schedulers -----------------------------------------------------------
+
+    @Test
+    fun immediateSchedulerRunsTheCallbackAtOnce() {
+        val immediate = ImmediateFrameScheduler(clock)
+        var ran = false
+        val token = immediate.postFrame { ran = true }
+
+        assertTrue(ran)
+        assertTrue("already run, so the handle is spent", token.isDisposed)
     }
 
     @Test

@@ -20,3 +20,18 @@ forbid-dep:     framework
 forbid-dep:     framework-minus-apex
 forbid-dep:     services
 forbid-dep:     aurora-platform
+
+# RULE-007: as for the SDK, with one declared exemption.
+#
+# RealtimeClock is the single sanctioned reader of the system clock in the whole
+# of sdk + runtime. Every rule of this shape needs exactly one hole or the
+# abstraction it protects cannot be implemented; what matters is that the hole
+# lives here, in the tool's input, rather than in someone's memory.
+forbid-call:    System.currentTimeMillis
+forbid-call:    System.nanoTime
+forbid-call:    Thread.sleep
+forbid-call:    Choreographer
+forbid-call:    Looper
+forbid-call:    Handler(
+
+call-exemption: System.nanoTime@runtime/java/aurora/runtime/time/RealtimeClock.kt

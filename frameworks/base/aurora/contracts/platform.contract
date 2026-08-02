@@ -21,3 +21,7 @@ allow-dep:      aurora-runtime
 
 forbid-dep:     services
 forbid-dep:     aurora-device
+
+# RULE-007 does not restrict the platform: this is the layer whose job is to know
+# what Android actually is. Sprint 08 (Android Platform Bridge) adds
+# ChoreographerFrameScheduler and friends here.

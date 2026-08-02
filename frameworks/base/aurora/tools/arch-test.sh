@@ -128,6 +128,59 @@ check_soong_deps() {
   fi
 }
 
+# RULE-007: forbidden platform calls.
+#
+# Import checks cannot catch these. Nothing has to be imported to write
+# System.nanoTime() or Thread.sleep(), so the boundary has to be enforced on the
+# call text itself.
+#
+# Exactly one exemption exists, declared in the contract as
+#   call-exemption: <call>@<path relative to frameworks/base/aurora>
+# because a rule that forbids reading the clock must still let the one sanctioned
+# clock adapter read it. Written into the tool rather than remembered, or it gets
+# copied elsewhere within a few sprints.
+check_forbidden_calls() {
+  local contract="$1"
+  local layer src
+  layer="$(value_of layer "$contract")"
+  src="$AURORA_DIR/$(value_of source-root "$contract")"
+  [ -d "$src" ] || return
+
+  local call exempt_paths hits filtered p
+  while IFS= read -r call; do
+    [ -z "$call" ] && continue
+
+    # Paths allowed to make this particular call.
+    exempt_paths="$(values_of call-exemption "$contract" \
+      | grep -F "$call@" | sed "s|^.*@||")"
+
+    # Drop comment lines. Documentation has to be able to name what it forbids —
+    # the rule's own explanation mentions every one of these — and a checker that
+    # cannot tell a rule from a violation of it is worse than no checker, because
+    # people learn to ignore its output.
+    #
+    # Matches on `path:line:` then leading whitespace then a comment opener. Code
+    # with a trailing comment is still scanned, which is the right way round.
+    hits="$(grep -rnF "$call" "$src" --include='*.java' --include='*.kt' 2>/dev/null \
+      | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(\*|//|/\*)' || true)"
+
+    filtered="$hits"
+    while IFS= read -r p; do
+      [ -z "$p" ] && continue
+      filtered="$(printf '%s\n' "$filtered" | grep -vF "$AURORA_DIR/$p" || true)"
+    done <<< "$exempt_paths"
+
+    if [ -n "$filtered" ]; then
+      fail "$layer must not call '$call':"
+      printf '%s\n' "$filtered" | sed 's/^/          /'
+    elif [ -n "$exempt_paths" ]; then
+      ok "$layer: '$call' only in $(printf '%s' "$exempt_paths" | tr '\n' ' ')"
+    else
+      ok "$layer: no call to $call"
+    fi
+  done < <(values_of forbid-call "$contract")
+}
+
 # ---------------------------------------------------------------------------
 # Negative compiles.
 #
@@ -213,6 +266,7 @@ main() {
     echo "--- $(basename "$contract") ---"
     check_forbidden_imports "$contract"
     check_aurora_layering "$contract"
+    check_forbidden_calls "$contract"
     check_soong_deps "$contract"
     echo
   done

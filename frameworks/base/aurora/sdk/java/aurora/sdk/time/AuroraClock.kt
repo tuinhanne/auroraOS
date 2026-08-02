@@ -17,40 +17,54 @@
 package aurora.sdk.time
 
 /**
- * The only source of time anything in Aurora may read.
+ * Anything that can report a time on a nanosecond timebase.
  *
- * ## Monotonic, never wall-clock
- *
- * [nowNanos] counts from an arbitrary origin and never goes backwards. Wall-clock time does:
- * an NTP correction, a timezone change or the user editing the date can move it by hours, in
- * either direction. An animation that measured its elapsed time against wall-clock would jump
- * or freeze when that happened, and the bug would be unreproducible because it depends on
- * something outside the program.
- *
- * So this interface deliberately cannot tell you what time of day it is. Anything that needs
- * that — a notification timestamp, a clock widget — must get it elsewhere, and having to go
- * elsewhere is the point: the two kinds of time are not interchangeable and mixing them is a
- * class of bug that is very hard to see in review.
- *
- * ## Why an interface at all
- *
- * So that time can be *driven* in a test. With a real clock, testing that an animation is
- * halfway through after 150ms means sleeping for 150ms and hoping the machine was not busy.
- * With this, a test advances the clock by exactly 150ms and asserts. No sleeps, no flakes, and
- * a suite that runs in milliseconds instead of minutes.
- *
- * This is the same inversion as `AuroraDispatcher`: the runtime depends on a seam, and only
- * the platform knows what the real thing is.
+ * The root of the time model. Kept separate from [AuroraClock] because not every source of
+ * time is a clock: a frame source hands out the instant a frame is composed for, which is a
+ * legitimate time but is not something you can poll.
  */
-interface AuroraClock {
+interface TimeSource {
 
     /**
      * Nanoseconds since an arbitrary, fixed origin.
      *
-     * Only differences between two readings are meaningful. The absolute value means nothing
-     * and must never be persisted or compared across processes.
+     * Only differences are meaningful. The absolute value must never be persisted or compared
+     * across processes.
      */
     fun nowNanos(): Long
+}
+
+/**
+ * The only source of time anything in Aurora may read.
+ *
+ * ## RULE-006: monotonic, always
+ *
+ * Readings never decrease: `t0 <= t1 <= t2`. Every implementation must preserve this,
+ * including the ones used only in tests.
+ *
+ * The reason is not purity. A test seam that can produce states production cannot produce
+ * makes every test written against it a test of a world that does not exist. If `TestClock`
+ * could rewind, code could be written — and proven correct — against behaviour the real clock
+ * will never exhibit. So `rewind()` and `setTime()` do not exist anywhere. A test that needs a
+ * different origin constructs a new clock.
+ *
+ * ## Monotonic, never wall-clock
+ *
+ * This interface deliberately cannot tell you the time of day. Wall-clock time moves
+ * backwards when NTP corrects it or the user edits the date, and an animation measuring
+ * elapsed time against it would jump or freeze. Anything that needs a calendar time gets it
+ * elsewhere, and having to go elsewhere is the point: the two are not interchangeable and
+ * mixing them is invisible in review.
+ *
+ * ## Why an interface
+ *
+ * So time can be driven. Testing that an animation is halfway through after 150ms otherwise
+ * means sleeping 150ms and hoping the machine was not busy. Here a test advances by exactly
+ * 150ms and asserts: no sleeps, no flakes, a suite in milliseconds.
+ *
+ * Implementations live in `aurora.runtime.time`; this layer only states the contract.
+ */
+interface AuroraClock : TimeSource {
 
     /** [nowNanos] truncated to milliseconds. Convenience only; prefer nanoseconds internally. */
     fun nowMillis(): Long = nowNanos() / NANOS_PER_MILLI
@@ -70,14 +84,4 @@ interface AuroraClock {
         @JvmStatic
         fun nanosToMillis(nanos: Long): Long = nanos / NANOS_PER_MILLI
     }
-}
-
-/**
- * The real monotonic clock, backed by [System.nanoTime].
- *
- * `System.nanoTime` rather than `currentTimeMillis` for the reason given on [AuroraClock]: it
- * is monotonic and unaffected by the user or by NTP.
- */
-object RealtimeClock : AuroraClock {
-    override fun nowNanos(): Long = System.nanoTime()
 }
