@@ -64,6 +64,8 @@ service.
 | `aurora-runtime` | `aurora.runtime` | `runtime/java/` | Lifecycle and environment |
 | `aurora-platform` | `aurora.platform` | `platform/java/` | System integration |
 | `aurora-platform-tests` | — | `tests/java/` | Host-side unit tests |
+| `contracts/` | — | `contracts/*.contract` | Machine-readable layer rules |
+| `tools/arch-test.sh` | — | `tools/` | Enforces the contracts |
 
 All three are `java_library` with `sdk_version: "core_current"` and
 `host_supported: true`. They are marked `installable: false` because Sprint 01
@@ -121,6 +123,28 @@ Rule to preserve when extending: if a class in `sdk` or `runtime` needs to
 
 ---
 
+## Architecture enforcement
+
+The layering rules are not a convention; they are checked.
+
+```bash
+frameworks/base/aurora/tools/arch-test.sh
+```
+
+Enforcement has two independent parts, and the order matters. The compiler is the real
+barrier: `sdk_version: "core_current"` keeps `android.*`, `com.android.server.*` and
+`com.android.internal.*` off the classpath, so a forbidden import cannot compile. That
+guarantee can be removed by a single edit to `Android.bp`, which is what `arch-test.sh`
+exists to catch. It re-checks the rules declared in `contracts/`, verifies `Android.bp`
+still says what it should, and compiles the fixtures under `tests/arch/` that must fail.
+
+Change a rule by editing the relevant `.contract` file. Nothing else reads them.
+
+On a workstation without `javac` on the PATH the negative compiles report `skip`; they run
+on the build machine, where the jars they compile against exist.
+
+---
+
 ## Build & Test
 
 ```bash
@@ -141,19 +165,24 @@ required, so the edit–test loop is measured in seconds rather than hours.
 
 In expected order. Each step names the extension point already prepared for it:
 
-**Sprint 02 — Wire into the system.** Let `aurora-platform` depend on
-`framework`, narrow `AuroraContext.hostContext()` from `Object` to
-`android.content.Context`, initialize `AuroraRuntime` inside `SystemServer`, and
-publish `AuroraServiceRegistry` as a system service. This is the first step that
-changes runtime behaviour, so Boot PASS must be verified for real rather than
-holding by construction as it does in Sprint 01.
+**Sprint 02 — Architecture boundary.** Declare the layer rules in `contracts/`, enforce them
+with `tools/arch-test.sh`, and prove the compiler still rejects forbidden imports with
+negative fixtures. Done before the system wiring on purpose: once `aurora.platform` gains
+access to `framework` in Sprint 03, the classpath stops protecting the lower layers by
+accident, so the tripwire has to exist first.
 
-**Sprint 03 — First service.** Define a service interface in `aurora.sdk`,
-implement it in `aurora.platform`, and register it. This is where the three-layer
-boundary gets its first real test.
+**Sprint 03 — Wire into the system.** Let `aurora-platform` depend on `framework`, narrow
+`AuroraContext.hostContext()` from `Object` to `android.content.Context`, initialize
+`AuroraRuntime` inside `SystemServer`, and publish `AuroraServiceRegistry` as a system
+service. This is the first step that changes runtime behaviour, so Boot PASS must be
+verified for real rather than holding by construction as it does today.
 
-**Sprint 04 — Configuration.** Read system properties and overlays so the
-runtime can toggle features without a rebuild.
+**Sprint 04 — First service.** Define a service interface in `aurora.sdk`, implement it in
+`aurora.platform`, and register it. This is where the three-layer boundary gets its first
+real test.
+
+**Sprint 05 — Configuration.** Read system properties and overlays so the runtime can toggle
+features without a rebuild.
 
 **Later — Gesture work.** iOS-style gesture customisation belongs in
 `aurora.platform`, acting on `SystemUI` and Launcher3 QuickStep. Because gesture

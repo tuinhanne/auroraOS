@@ -68,6 +68,19 @@ Sprint 01 deliberately wires nothing into Android. The module compiles and is
 tested, but no code runs on the device yet. Sprint 02 is where Aurora is
 initialized from `SystemServer` and behaviour actually changes.
 
+**Sprint 02 — Architecture boundary: complete.**
+
+| Exit criterion | Result |
+|---|---|
+| `arch-test.sh` PASS | 27 checks, 0 failures, exit 0 on the build machine |
+| Each check fails on a violation | All four check types were individually broken, observed to exit 1, then reverted |
+| Contracts for all four layers | `sdk`, `runtime`, `platform`, and `device` (rules recorded; the layer itself is deliberately not created yet) |
+| Build still passes | `m aurora-sdk aurora-runtime aurora-platform` rc=0 |
+
+The `aurora.device` layer has no module on purpose. With one target device there is nothing
+real to abstract, so its contract records the rules and `arch-test.sh` reports it as `skip`
+until the layer exists.
+
 ---
 
 ## Target device
