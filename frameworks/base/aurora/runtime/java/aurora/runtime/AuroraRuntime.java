@@ -17,6 +17,14 @@
 package aurora.runtime;
 
 import aurora.sdk.AuroraVersion;
+import aurora.sdk.service.AnimationService;
+import aurora.sdk.service.AuroraService;
+import aurora.sdk.service.GestureService;
+import aurora.sdk.service.IslandService;
+import aurora.sdk.service.NotificationService;
+import aurora.sdk.service.PowerService;
+import aurora.sdk.service.ThemeService;
+import aurora.sdk.service.VolumeService;
 
 /**
  * Per-process entry point to the Aurora platform.
@@ -52,8 +60,104 @@ public final class AuroraRuntime {
     private final AuroraContext mContext;
     private volatile boolean mShutdown;
 
+    /**
+     * Supplies service implementations. Null until the platform installs one, which is the
+     * normal state on a host JVM and during early boot.
+     */
+    private volatile ServiceProvider mServiceProvider;
+
     private AuroraRuntime(AuroraContext context) {
         mContext = context;
+    }
+
+    /**
+     * Installs the object that supplies service implementations.
+     *
+     * <p>Called by {@code aurora.platform} once the system is far enough along to have
+     * services. Until then every accessor below reports the service as unavailable, which is
+     * correct rather than merely convenient: asking for a service before the platform is ready
+     * is a real error, and returning a half-built one would hide it.
+     *
+     * @param provider the provider, or null to detach
+     */
+    public void setServiceProvider(ServiceProvider provider) {
+        mServiceProvider = provider;
+    }
+
+    /** Whether a {@link ServiceProvider} has been installed. */
+    public boolean hasServiceProvider() {
+        return mServiceProvider != null;
+    }
+
+    /**
+     * Returns the service registered for {@code type}, or null when it is unavailable.
+     *
+     * <p>Use this where a missing service is a condition to handle. Use
+     * {@link #requireService(Class)} where it is a programming error.
+     */
+    public <T extends AuroraService> T findService(Class<T> type) {
+        if (type == null) {
+            throw new IllegalArgumentException("type must not be null");
+        }
+        ServiceProvider provider = mServiceProvider;
+        return provider == null ? null : provider.find(type);
+    }
+
+    /**
+     * Returns the service registered for {@code type}, failing if it is unavailable.
+     *
+     * @throws IllegalStateException if no provider is installed, or the provider has no
+     *     implementation for {@code type}
+     */
+    public <T extends AuroraService> T requireService(Class<T> type) {
+        T service = findService(type);
+        if (service == null) {
+            throw new IllegalStateException(
+                    "no implementation available for " + type.getName()
+                            + "; the platform has not registered one yet");
+        }
+        return service;
+    }
+
+    // --- Typed service accessors -------------------------------------------
+    //
+    // Sprint 04 ships the contracts only. Every implementation arrives later, so each of
+    // these throws until the platform installs a provider. The failure names the service,
+    // because a bare TODO() tells whoever hits it nothing about what is missing.
+
+    /** Animation driving. See {@link aurora.sdk.service.AnimationService}. */
+    public AnimationService animation() {
+        return requireService(AnimationService.class);
+    }
+
+    /** Light and dark appearance. See {@link aurora.sdk.service.ThemeService}. */
+    public ThemeService theme() {
+        return requireService(ThemeService.class);
+    }
+
+    /** Notification posting and observation. */
+    public NotificationService notifications() {
+        return requireService(NotificationService.class);
+    }
+
+    /** System gesture routing. */
+    public GestureService gestures() {
+        return requireService(GestureService.class);
+    }
+
+    /** Audio volume. */
+    public VolumeService volume() {
+        return requireService(VolumeService.class);
+    }
+
+    /** Battery and power state. */
+    public PowerService power() {
+        return requireService(PowerService.class);
+    }
+
+    /** The display-cutout island. */
+    public IslandService island() {
+        return requireService(IslandService.class);
     }
 
     /**

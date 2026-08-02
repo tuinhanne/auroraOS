@@ -98,6 +98,24 @@ Compose, the View system and XML resources alike.
 This sprint also taught `arch-test.sh` to scan Kotlin imports. Without that, the seven files
 added here would have sat outside the boundary Sprint 02 built.
 
+**Sprint 04 — Aurora runtime services: complete.**
+
+| Exit criterion | Result |
+|---|---|
+| Compile PASS | `m aurora-sdk aurora-runtime aurora-platform` rc=0 |
+| Unit tests | 54 passing, up from 45 |
+| Architecture wall intact | `arch-test.sh` 27 checks, 0 failures |
+
+Seven service contracts under `aurora.sdk.service`: animation, theme, notification, gesture,
+volume, power and island. Contracts only — no implementation exists yet, and every accessor on
+`AuroraRuntime` fails with a message naming the missing service.
+
+The interfaces live in `aurora.sdk` rather than beside their future implementations because
+`aurora.runtime` is forbidden from importing `aurora.platform`. `ServiceProvider`, declared in
+`aurora.runtime` and implemented later by the platform, is the seam that lets the runtime hand
+out services it cannot see. That indirection is also what allows the service tests to run on a
+host JVM against fakes, with no Android involved.
+
 ---
 
 ## Target device
