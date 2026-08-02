@@ -122,6 +122,82 @@ check_soong_deps() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# Negative compiles.
+#
+# The checks above are textual: they read sources and Android.bp. This one asks
+# javac, which is the mechanism the whole design actually relies on. The fixtures
+# under tests/arch/ are named .java.txt so no Soong glob can ever pick them up;
+# they are copied to a temp directory as .java and must fail to compile.
+# ---------------------------------------------------------------------------
+
+# Tree root, derived from this script's own location rather than from
+# ANDROID_BUILD_TOP, which is empty unless the caller has run lunch.
+tree_root() {
+  local root="$AURORA_DIR/../../.."
+  ( cd "$root" 2>/dev/null && pwd ) || echo "${ANDROID_BUILD_TOP:-}"
+}
+
+# Locate a built jar for a module, if the tree has been built.
+find_jar() {
+  local root
+  root="$(tree_root)"
+  [ -n "$root" ] || return 0
+  find "$root/out/soong/.intermediates/frameworks/base/aurora/$1" \
+       -name "$1.jar" -path "*javac*" 2>/dev/null | head -1
+}
+
+# Compile a fixture that MUST fail, and check it failed for the stated reason.
+expect_compile_failure() {
+  local fixture="$1" expect="$2" classpath="$3"
+  local name tmp src
+  name="$(basename "$fixture" .java.txt)"
+  tmp="$(mktemp -d)"
+  src="$tmp/$name.java"
+  cp "$fixture" "$src"
+  mkdir -p "$tmp/out"
+
+  if javac -nowarn -cp "$classpath" -d "$tmp/out" "$src" >"$tmp/out.log" 2>&1; then
+    fail "$name compiled, but the boundary requires it to fail"
+  elif grep -q "$expect" "$tmp/out.log"; then
+    ok "$name rejected by javac ($expect)"
+  else
+    fail "$name failed, but not for the expected reason '$expect':"
+    sed 's/^/          /' "$tmp/out.log" | head -5
+  fi
+  rm -rf "$tmp"
+}
+
+check_negative_compiles() {
+  local arch_dir="$AURORA_DIR/tests/arch"
+  [ -d "$arch_dir" ] || { skip "no negative fixtures"; return; }
+
+  if ! command -v javac >/dev/null 2>&1; then
+    skip "negative compiles: javac not on PATH"
+    return
+  fi
+
+  local sdk_jar runtime_jar
+  sdk_jar="$(find_jar aurora-sdk)"
+  runtime_jar="$(find_jar aurora-runtime)"
+  if [ -z "$sdk_jar" ] || [ -z "$runtime_jar" ]; then
+    skip "negative compiles: aurora jars not built (run: m aurora-sdk aurora-runtime)"
+    return
+  fi
+
+  # aurora.sdk sees nothing but itself.
+  expect_compile_failure "$arch_dir/SdkImportsRuntime.java.txt" \
+      "package aurora.runtime does not exist" "$sdk_jar"
+
+  # aurora.runtime sees the sdk, and nothing above or beside it.
+  expect_compile_failure "$arch_dir/RuntimeImportsPlatform.java.txt" \
+      "package aurora.platform does not exist" "$sdk_jar:$runtime_jar"
+  expect_compile_failure "$arch_dir/RuntimeImportsServer.java.txt" \
+      "package com.android.server does not exist" "$sdk_jar:$runtime_jar"
+  expect_compile_failure "$arch_dir/RuntimeImportsInternal.java.txt" \
+      "package com.android.internal.util does not exist" "$sdk_jar:$runtime_jar"
+}
+
 main() {
   echo "Aurora architecture test"
   echo "contracts: $CONTRACTS_DIR"
@@ -134,6 +210,10 @@ main() {
     check_soong_deps "$contract"
     echo
   done
+
+  echo "--- negative compiles ---"
+  check_negative_compiles
+  echo
 
   echo "======================================"
   echo "checks passed: $CHECKS   failures: $FAILURES"

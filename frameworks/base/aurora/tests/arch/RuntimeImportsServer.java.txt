@@ -1,0 +1,12 @@
+// Negative fixture. MUST NOT COMPILE. See SdkImportsRuntime.java.txt for how these run.
+//
+// Proves: aurora.runtime cannot reach into the system server. This is the rule that
+// matters most from Sprint 03 onward, when aurora.platform gains access to framework
+// and the classpath stops protecting the lower layers by accident.
+package aurora.runtime;
+
+import com.android.server.SystemService;
+
+public final class RuntimeImportsServer {
+    Object mUnused = SystemService.class;
+}

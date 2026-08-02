@@ -1,0 +1,10 @@
+// Negative fixture. MUST NOT COMPILE. See SdkImportsRuntime.java.txt for how these run.
+//
+// Proves: aurora.runtime cannot reach upward into aurora.platform.
+package aurora.runtime;
+
+import aurora.platform.AuroraServiceRegistry;
+
+public final class RuntimeImportsPlatform {
+    AuroraServiceRegistry mRegistry;
+}

@@ -1,0 +1,14 @@
+// Negative fixture. MUST NOT COMPILE.
+//
+// Not part of any Soong module: Android.bp globs tests/java/**, not tests/**, and the
+// .java.txt suffix keeps this invisible to the build even if that glob is widened later.
+// tools/arch-test.sh copies it to a temp directory as .java and asserts javac rejects it.
+//
+// Proves: aurora.sdk is the bottom layer and cannot see aurora.runtime.
+package aurora.sdk;
+
+import aurora.runtime.AuroraRuntime;
+
+public final class SdkImportsRuntime {
+    AuroraRuntime mRuntime;
+}

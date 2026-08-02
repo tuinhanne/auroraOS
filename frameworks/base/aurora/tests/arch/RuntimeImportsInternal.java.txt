@@ -1,0 +1,12 @@
+// Negative fixture. MUST NOT COMPILE. See SdkImportsRuntime.java.txt for how these run.
+//
+// Proves: aurora.runtime cannot reach hidden framework API. com.android.internal is
+// unstable private API; depending on it would make every AOSP rebase a liability, so
+// this rule stays in force permanently, for every layer.
+package aurora.runtime;
+
+import com.android.internal.util.Preconditions;
+
+public final class RuntimeImportsInternal {
+    Object mUnused = Preconditions.class;
+}
