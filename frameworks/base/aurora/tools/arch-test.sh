@@ -51,6 +51,38 @@ check_forbidden_imports() {
   done < <(values_of forbid-import "$contract")
 }
 
+# Any aurora.* import must be either the layer's own package or explicitly allowed.
+check_aurora_layering() {
+  local contract="$1"
+  local layer src own allowed imp violation=0
+  layer="$(value_of layer "$contract")"
+  src="$AURORA_DIR/$(value_of source-root "$contract")"
+  own="$(value_of package-root "$contract")."
+
+  [ -d "$src" ] || return
+
+  allowed="$(values_of allow-aurora-import "$contract")"
+
+  while IFS= read -r imp; do
+    [ -z "$imp" ] && continue
+    case "$imp" in aurora.*) ;; *) continue ;; esac
+    case "$imp" in "$own"*) continue ;; esac
+
+    local match=0 a
+    while IFS= read -r a; do
+      [ -z "$a" ] && continue
+      case "$imp" in "$a"*) match=1; break ;; esac
+    done <<< "$allowed"
+
+    if [ "$match" -eq 0 ]; then
+      fail "$layer imports '$imp', which no allow-aurora-import permits"
+      violation=1
+    fi
+  done < <(imports_in "$src" | sort -u)
+
+  [ "$violation" -eq 0 ] && ok "$layer: all aurora.* imports are within the allowed layers"
+}
+
 main() {
   echo "Aurora architecture test"
   echo "contracts: $CONTRACTS_DIR"
@@ -59,6 +91,7 @@ main() {
   for contract in "$CONTRACTS_DIR"/*.contract; do
     echo "--- $(basename "$contract") ---"
     check_forbidden_imports "$contract"
+    check_aurora_layering "$contract"
     echo
   done
 
