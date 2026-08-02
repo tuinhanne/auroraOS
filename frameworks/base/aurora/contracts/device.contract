@@ -1,0 +1,20 @@
+# aurora.device - per-device behaviour.
+#
+# NO MODULE EXISTS YET, deliberately. With a single target device there is nothing
+# to abstract, and inventing DeviceProfile / DeviceCapabilities now would mean guessing
+# what varies between devices before a second device exists to tell us. This file records
+# the rules that will apply when the layer is created; arch-test.sh reports it as `skip`
+# until then.
+
+layer:          device
+module:         aurora-device
+package-root:   aurora.device
+source-root:    device/java
+
+allow-aurora-import: aurora.sdk.
+allow-aurora-import: aurora.runtime.
+allow-aurora-import: aurora.platform.
+
+forbid-import:  com.android.internal.
+
+allow-dep:      aurora-platform

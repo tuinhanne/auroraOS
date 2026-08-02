@@ -1,0 +1,23 @@
+# aurora.sdk - public, stable surface.
+# Depends on nothing. Everything else may depend on it.
+
+layer:          sdk
+module:         aurora-sdk
+package-root:   aurora.sdk
+source-root:    sdk/java
+
+# The bottom layer imports no other Aurora package, so there is no
+# allow-aurora-import line here on purpose.
+
+forbid-import:  android.
+forbid-import:  com.android.server.
+forbid-import:  com.android.internal.
+forbid-import:  aurora.runtime.
+forbid-import:  aurora.platform.
+forbid-import:  aurora.device.
+
+forbid-dep:     framework
+forbid-dep:     framework-minus-apex
+forbid-dep:     services
+forbid-dep:     aurora-runtime
+forbid-dep:     aurora-platform

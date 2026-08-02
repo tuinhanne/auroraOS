@@ -1,0 +1,23 @@
+# aurora.platform - system integration.
+# The only layer that will be allowed to reach into android.* (from Sprint 03).
+# Until then the forbid-import list below keeps it as clean as the layers beneath it.
+
+layer:          platform
+module:         aurora-platform
+package-root:   aurora.platform
+source-root:    platform/java
+
+allow-aurora-import: aurora.sdk.
+allow-aurora-import: aurora.runtime.
+
+# Sprint 03 will delete the `android.` line below and replace it with a narrower
+# allow list. com.android.internal. stays forbidden permanently: it is unstable
+# private API, and depending on it makes every AOSP rebase a liability.
+forbid-import:  android.
+forbid-import:  com.android.internal.
+forbid-import:  aurora.device.
+
+allow-dep:      aurora-runtime
+
+forbid-dep:     services
+forbid-dep:     aurora-device

@@ -1,0 +1,22 @@
+# aurora.runtime - process lifecycle and environment abstraction.
+# May use the SDK. Must stay free of Android so it unit tests on a host JVM.
+
+layer:          runtime
+module:         aurora-runtime
+package-root:   aurora.runtime
+source-root:    runtime/java
+
+allow-aurora-import: aurora.sdk.
+
+forbid-import:  android.
+forbid-import:  com.android.server.
+forbid-import:  com.android.internal.
+forbid-import:  aurora.platform.
+forbid-import:  aurora.device.
+
+allow-dep:      aurora-sdk
+
+forbid-dep:     framework
+forbid-dep:     framework-minus-apex
+forbid-dep:     services
+forbid-dep:     aurora-platform
