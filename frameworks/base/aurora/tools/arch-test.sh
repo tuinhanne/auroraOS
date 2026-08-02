@@ -20,8 +20,14 @@ values_of() { grep -E "^$1:" "$2" 2>/dev/null | sed -E "s/^$1:[[:space:]]*//" | 
 
 # Every import statement in a source tree, as bare package paths.
 imports_in() {
+  # Java: terminated by a semicolon, may be `import static`.
   grep -rhE "^import (static )?[a-zA-Z0-9_.]+;" "$1" --include='*.java' 2>/dev/null \
     | sed -E 's/^import (static )?//; s/;.*$//'
+  # Kotlin: no semicolon, no `static`, may end in `.*` and may carry an `as` alias.
+  # Kotlin sources must be scanned too, or a layer could import anything it liked
+  # simply by being written in Kotlin.
+  grep -rhE "^import +[a-zA-Z0-9_.]+(\.\*)?( +as +[A-Za-z0-9_]+)?[[:space:]]*$" "$1" --include='*.kt' 2>/dev/null \
+    | sed -E 's/^import +//; s/ +as +.*$//; s/[[:space:]]+$//'
 }
 
 check_forbidden_imports() {
