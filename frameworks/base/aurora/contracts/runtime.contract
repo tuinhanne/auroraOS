@@ -35,3 +35,30 @@ forbid-call:    Looper
 forbid-call:    Handler(
 
 call-exemption: System.nanoTime@runtime/java/aurora/runtime/time/RealtimeClock.kt
+
+# RULE-009: determinism hazards, scoped to the animation packages.
+#
+# forbid-call-under: <call>@<path prefix relative to frameworks/base/aurora>
+#
+# Unlike forbid-call, which covers the whole layer, this bans a call only beneath a path.
+# Randomness has no place in an animation engine anywhere.
+#
+# Four spellings, because the check is a literal string match and Kotlin has more than one way
+# to reach a random number. `kotlin.random.Random` shares no substring with `java.util.Random`,
+# so banning only the Java one would let the idiomatic Kotlin spelling through untouched - and
+# Sprint 06B, where a solver author reaches for "a little jitter to make it feel natural", is
+# exactly where that would happen. `Random(` is the bare-constructor catch for a wildcard
+# import, spelled the same way RULE-007 bans `Handler(` rather than a fully qualified name.
+forbid-call-under: Math.random@runtime/java/aurora/runtime/animation
+forbid-call-under: java.util.Random@runtime/java/aurora/runtime/animation
+forbid-call-under: kotlin.random.Random@runtime/java/aurora/runtime/animation
+forbid-call-under: Random(@runtime/java/aurora/runtime/animation
+
+# Hash containers are banned in AnimationRegistry.kt ONLY.
+#
+# The hazard is iteration order, not the container: tick order is observable behaviour, so a
+# hash there would let two runs of the same program tick in different orders. A HashMap used
+# for lookup elsewhere - handleById, for instance - is entirely fine, which is why this is
+# scoped to the one file where order becomes behaviour rather than to the package.
+forbid-call-under: HashMap@runtime/java/aurora/runtime/animation/AnimationRegistry.kt
+forbid-call-under: HashSet@runtime/java/aurora/runtime/animation/AnimationRegistry.kt

@@ -16,42 +16,16 @@
 
 package aurora.sdk.service
 
+import aurora.sdk.animation.AnimationHandle
 import aurora.sdk.design.Easing
 import aurora.sdk.design.Spring
 
 /**
- * A running animation, from the caller's point of view.
- *
- * Deliberately minimal: the caller needs to know whether it is still going, be able to stop
- * it, and be told when it ends. Everything else is the engine's business.
- */
-interface AnimationHandle {
-
-    /** Whether the animation is still producing values. */
-    val isRunning: Boolean
-
-    /**
-     * Stops the animation where it is.
-     *
-     * Does not jump to the end value. An animation cancelled mid-flight should stay where the
-     * user last saw it, or the interface appears to teleport.
-     */
-    fun cancel()
-
-    /**
-     * Registers a callback for when the animation finishes.
-     *
-     * @param listener receives true if the animation reached its target, false if it was
-     *     cancelled or interrupted
-     */
-    fun onFinished(listener: (completed: Boolean) -> Unit)
-}
-
-/**
  * Drives animations.
  *
- * The engine behind this arrives in Sprint 06; this contract exists so callers can be written
- * against it first.
+ * A convenience facade over [aurora.sdk.animation.Animator] for the two shapes callers reach
+ * for most. Anything needing pause, resume, restart, seek or lifecycle observation should use
+ * the animator directly; this exists so that the common case is one call.
  *
  * ## Interruption is the point
  *
@@ -60,6 +34,13 @@ interface AnimationHandle {
  * — and an animator that restarts from a fixed origin makes the interface visibly snap. The
  * [springTo] overload that takes an initial velocity exists for exactly this reason: it lets a
  * release continue the motion the finger was already making.
+ *
+ * ## Availability
+ *
+ * [springTo] cannot be satisfied until Sprint 06B adds the spring solver. An implementation
+ * arriving before then must reject it rather than silently substituting a timed curve, since
+ * a spring quietly replaced by an ease is exactly the kind of difference nobody notices in
+ * review and everybody feels on device.
  */
 interface AnimationService : AuroraService {
 

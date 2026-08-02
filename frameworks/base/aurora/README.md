@@ -67,6 +67,8 @@ service.
 | `contracts/` | — | `contracts/*.contract` | Machine-readable layer rules |
 | `tools/arch-test.sh` | — | `tools/` | Enforces the contracts |
 | (part of `aurora-sdk`) | `aurora.sdk.design` | `sdk/java/aurora/sdk/design/` | Design tokens |
+| (part of `aurora-sdk`) | `aurora.sdk.animation` | `sdk/java/aurora/sdk/animation/` | Animation contracts |
+| (part of `aurora-runtime`) | `aurora.runtime.animation` | `runtime/java/aurora/runtime/animation/` | The animation engine |
 
 Sources may be Java or Kotlin; every module globs both. `arch-test.sh` scans both too,
 so the layer boundary does not depend on which language a file happens to use.
@@ -229,6 +231,59 @@ in a frame gets the same timestamp, so long parallel transitions cannot drift ap
 microseconds between separate clock reads. *Testing*: frames are handed out at any spacing,
 including pathological ones, with no device and no waiting.
 
+**RULE-009 — Animation MUST be deterministic.** The same sequence of `FrameTime` values always
+produces the same result, independent of wall clock, thread and frame rate. Host tests and a
+device must agree frame for frame.
+
+All mutable animation state lives in an `AnimationStrategy`. An `Interpolator` is a pure
+function, and a design token is data; state hiding in either would make `seek()` and
+`restart()` silently stop being repeatable, because `transform(0.5f)` twice would return two
+different numbers.
+
+Enforced by `arch-test.sh` through `forbid-call-under`, which bans `Math.random`,
+`java.util.Random`, `kotlin.random.Random` and a bare `Random(` beneath
+`runtime/java/aurora/runtime/animation`, and by `AnimationDeterminismTest`, whose float
+comparisons all use a tolerance of exactly zero.
+
+Four spellings and not one, because the check matches literal text: `kotlin.random.Random`
+shares no substring with `java.util.Random`, so banning only the Java one would leave the
+idiomatic Kotlin spelling untouched. What that still cannot catch is randomness reached through
+an alias or a helper defined elsewhere — the check is a grep, not a call graph, and saying so is
+better than implying a guarantee it does not give.
+
+**RULE-010 — SDK defines the language, Runtime speaks it, Platform connects it to Android.**
+
+```
+aurora.sdk.animation        interface Animator          the language
+aurora.runtime.animation    class DefaultAnimator       speaking it
+aurora.platform.animation   class AndroidAnimatorBridge connecting it   (Sprint 08)
+```
+
+Three layers, never mixed. The practical test for a new file: if it *executes* anything beyond
+arithmetic on its own fields, it does not belong in `aurora.sdk`.
+
+**RULE-011 — One `FrameTime` per frame, shared by reference.** Exactly one is built and handed
+to every animation, never cloned and never mutated. Twenty animations in one transition cannot
+drift apart, because only one timestamp for the frame exists. No animation may post its own
+frame callback.
+
+**RULE-012 — Execution identity is not handle identity.** The handle is stable; executions are
+ephemeral. `COMPLETED` and `CANCELLED` end an execution, `DISPOSED` ends the handle, and every
+callback carries the `executionId` it belongs to so a listener from run 3 can tell it is being
+handed an event from run 4.
+
+**RULE-013 — An execution advances at most once per frame.** Anything started, restarted or
+disposed from inside a listener takes effect at the end of the frame. Otherwise where an
+animation started would depend on listener order, which no caller controls.
+
+A handle therefore never has more than one execution in `RUNNING` at the same time — not for a
+frame, not for an instant.
+
+**RULE-014 — An animation callback must never mutate `FrameTime`.** Every animation in a frame
+reads the same instance, so one callback dirtying it would corrupt the whole frame. `FrameTime`
+is a data class of `val`s; `AnimationApiTest` asserts by reflection that every field is `final`,
+so the rule fails the day someone adds a `var`.
+
 ### Time, in three tiers
 
 | Layer | Holds | Examples |
@@ -236,6 +291,23 @@ including pathological ones, with no device and no waiting.
 | `aurora.sdk.time` | concepts and contracts | `Duration`, `Timeline`, `FrameTime`, `TimeSource`, `AuroraClock`, `FrameScheduler` |
 | `aurora.runtime.time` | portable implementations | `RealtimeClock`, `TestClock`, `QueuedFrameScheduler`, `ImmediateFrameScheduler`, `TimelineDriver` |
 | `aurora.platform.time` | the Android bridge | `ChoreographerFrameScheduler` — Sprint 08 |
+
+### Animation, in the same three tiers
+
+| Layer | Holds | Examples |
+|---|---|---|
+| `aurora.sdk.animation` | concepts and contracts | `Animation`, `AnimationSpec`, `AnimationState`, `AnimationHandle`, `AnimationStrategy`, `Animator`, `AnimationController`, `Interpolator` |
+| `aurora.runtime.animation` | the engine | `AnimationStateMachine`, `ExecutionTimeline`, `TimedStrategy`, `AnimationRegistry`, `AnimationHandleImpl`, `DefaultAnimator`, `DefaultAnimationController`, `AnimationDriver` |
+| `aurora.platform.animation` | the Android bridge | `ChoreographerAnimationDriver` — Sprint 08 |
+
+Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedStrategy` is
+the only `AnimationStrategy`, and it delegates to `Timeline`. Sprint 06B adds `SpringStrategy`,
+`BezierInterpolator`, `DecayStrategy`, `SnapStrategy` and `FlingStrategy` as new files,
+touching none of the classes above.
+
+Timing bugs and physics bugs look identical from the outside — something moved wrong — so the
+half that can be proven exactly is built first. When a pixel is wrong in 06B, it is the
+solver.
 
 The same split Kotlin coroutines make between `kotlinx.coroutines`, its dispatchers, and the
 Android dispatcher. Time is a *domain model*, not an implementation detail: `Duration` and
@@ -354,10 +426,19 @@ real test.
 **Sprint 05 — Configuration.** Read system properties and overlays so the runtime can toggle
 features without a rebuild.
 
-**Later — Gesture work.** iOS-style gesture customisation belongs in
-`aurora.platform`, acting on `SystemUI` and Launcher3 QuickStep. Because gesture
-code lives in the framework layer and touches no device hardware, whatever is
-developed on the emulator will behave identically on real hardware.
+**Sprint 06B — Physics.** `SpringStrategy`, `BezierInterpolator`, `DecayStrategy`,
+`SnapStrategy` and `FlingStrategy`, each benchmarked. All are new files in
+`aurora.runtime.animation`; the engine does not change, which is the claim Sprint 06A exists
+to make true.
+
+**Sprint 08 — Android platform bridge.** `ChoreographerFrameScheduler` and
+`ChoreographerAnimationDriver` in `aurora.platform`. `AnimationController.tick(FrameTime)` is
+already the entry point, so this is an adapter rather than a rework.
+
+**Later — Gesture work.** iOS-style gesture customisation belongs in `aurora.platform`, acting
+on `SystemUI` and Launcher3 QuickStep. Because gesture code lives in the framework layer and
+touches no device hardware, whatever is developed on the emulator will behave identically on
+real hardware.
 
 ### What to watch out for
 

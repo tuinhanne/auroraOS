@@ -181,6 +181,49 @@ check_forbidden_calls() {
   done < <(values_of forbid-call "$contract")
 }
 
+# RULE-009: forbidden calls, scoped to a path rather than to a whole layer.
+#
+# Declared in a contract as
+#   forbid-call-under: <call>@<path relative to frameworks/base/aurora>
+#
+# forbid-call covers an entire layer, which is right for RULE-007 - nothing in sdk or runtime
+# may read the system clock. RULE-009 is narrower: the hazard is specific to the animation
+# packages, and one of the two entries is specific to a single file. Banning a hash container
+# across the whole runtime would reject a perfectly good lookup map.
+check_forbidden_calls_under() {
+  local contract="$1"
+  local layer entry call rel target hits
+  layer="$(value_of layer "$contract")"
+
+  while IFS= read -r entry; do
+    [ -z "$entry" ] && continue
+    call="${entry%%@*}"
+    rel="${entry#*@}"
+    target="$AURORA_DIR/$rel"
+
+    if [ ! -e "$target" ]; then
+      skip "$layer: '$call' under $rel (path does not exist yet)"
+      continue
+    fi
+
+    # Same comment-stripping as check_forbidden_calls: documentation must be able to name
+    # what it forbids, and this rule's own explanation names every one of these.
+    #
+    # -H forces the filename prefix even when $target is a single file rather than a
+    # directory: plain grep -r omits it for a lone file, which would leave the comment
+    # regex below unable to find the leading "path:line:" it expects.
+    hits="$(grep -rnHF "$call" "$target" --include='*.java' --include='*.kt' 2>/dev/null \
+      | grep -vE '^[^:]*:[0-9]+:[[:space:]]*(\*|//|/\*)' || true)"
+
+    if [ -n "$hits" ]; then
+      fail "$layer must not call '$call' under $rel:"
+      printf '%s\n' "$hits" | sed 's/^/          /'
+    else
+      ok "$layer: nowhere under $rel calls $call"
+    fi
+  done < <(values_of forbid-call-under "$contract")
+}
+
 # ---------------------------------------------------------------------------
 # Negative compiles.
 #
@@ -267,6 +310,7 @@ main() {
     check_forbidden_imports "$contract"
     check_aurora_layering "$contract"
     check_forbidden_calls "$contract"
+    check_forbidden_calls_under "$contract"
     check_soong_deps "$contract"
     echo
   done
