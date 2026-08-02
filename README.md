@@ -65,7 +65,7 @@ atest aurora-platform-tests
 | Unit tests | 25 passing on the host JVM |
 
 Sprint 01 deliberately wires nothing into Android. The module compiles and is
-tested, but no code runs on the device yet. Sprint 02 is where Aurora is
+tested, but no code runs on the device yet. Sprint 03 is where Aurora is
 initialized from `SystemServer` and behaviour actually changes.
 
 **Sprint 02 — Architecture boundary: complete.**

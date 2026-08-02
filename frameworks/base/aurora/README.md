@@ -16,7 +16,7 @@ Three layers, with dependencies flowing in one direction only:
         ┌──────────────────────────────────────────────┐
         │  aurora.platform                             │
         │  System integration. The ONLY layer allowed  │
-        │  to touch android.* (starting in Sprint 02). │
+        │  to touch android.* (starting in Sprint 03). │
         │  → AuroraServiceRegistry                     │
         └───────────────────┬──────────────────────────┘
                             │ depends on
