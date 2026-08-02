@@ -81,6 +81,23 @@ The `aurora.device` layer has no module on purpose. With one target device there
 real to abstract, so its contract records the rules and `arch-test.sh` reports it as `skip`
 until the layer exists.
 
+**Sprint 03 — Design system: complete.**
+
+| Exit criterion | Result |
+|---|---|
+| Design tokens compile | `m aurora-sdk aurora-runtime aurora-platform` rc=0 |
+| Unit tests | 45 passing, up from 25 |
+| Architecture wall intact | `arch-test.sh` 27 checks, 0 failures |
+| Wall covers Kotlin | A forbidden import in a `.kt` file was observed to fail, exit 1 |
+
+Seven token files under `aurora.sdk.design`, reached through the `DesignTokens` facade.
+Values are plain `Int`, `Long` and `Float` rather than `Dp` or `Color`: `aurora.sdk` has
+neither Android nor Compose on its classpath, and keeping tokens as data means one set feeds
+Compose, the View system and XML resources alike.
+
+This sprint also taught `arch-test.sh` to scan Kotlin imports. Without that, the seven files
+added here would have sat outside the boundary Sprint 02 built.
+
 ---
 
 ## Target device

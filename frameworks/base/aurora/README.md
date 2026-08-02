@@ -66,6 +66,10 @@ service.
 | `aurora-platform-tests` | — | `tests/java/` | Host-side unit tests |
 | `contracts/` | — | `contracts/*.contract` | Machine-readable layer rules |
 | `tools/arch-test.sh` | — | `tools/` | Enforces the contracts |
+| (part of `aurora-sdk`) | `aurora.sdk.design` | `sdk/java/aurora/sdk/design/` | Design tokens |
+
+Sources may be Java or Kotlin; every module globs both. `arch-test.sh` scans both too,
+so the layer boundary does not depend on which language a file happens to use.
 
 All three are `java_library` with `sdk_version: "core_current"` and
 `host_supported: true`. They are marked `installable: false` because Sprint 01
@@ -142,6 +146,42 @@ Change a rule by editing the relevant `.contract` file. Nothing else reads them.
 
 On a workstation without `javac` on the PATH the negative compiles report `skip`; they run
 on the build machine, where the jars they compile against exist.
+
+---
+
+## Design tokens
+
+`aurora.sdk.design` holds the design language: spacing, radius, elevation, motion,
+typography and colour. Read everything through the `DesignTokens` facade.
+
+```kotlin
+val pad = DesignTokens.spacing.COMPONENT_PADDING
+val ms  = DesignTokens.motion.DURATION_ENTER
+val bg  = DesignTokens.colors(dark = true).background
+```
+
+Values are plain `Int`, `Long` and `Float` — never `Dp` or `Color`. That is forced by the
+layer rules, since `aurora.sdk` has neither Android nor Compose on its classpath, and it is
+also the better design: tokens are data, so one set feeds Compose, the View system and XML
+resources alike. Converting them to platform types belongs in an adapter in
+`aurora.platform`.
+
+| Kind | Unit | Type |
+|---|---|---|
+| Spacing, radius, elevation | dp | `Int` |
+| Type size, line height | sp | `Int` |
+| Duration | ms | `Int` |
+| Colour | packed ARGB `0xAARRGGBB` | `Long` |
+| Letter spacing | em | `Float` |
+
+Each token file separates a raw scale from semantic aliases. Prefer the aliases:
+`COMPONENT_PADDING` survives a decision to change component padding, a literal `LG` does not.
+Colour has the same split — `ColorTokens.Palette` holds raw hues, `LIGHT` and `DARK` map them
+to roles, and interface code must only ever read roles.
+
+Nothing stops a caller from writing `16` instead of a token; that part is convention, not
+something the compiler can catch. What the compiler does guarantee is that no token can reach
+into Android or Compose.
 
 ---
 
