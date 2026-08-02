@@ -129,6 +129,30 @@ Subscribers are isolated from each other — a throwing one cannot stop the rest
 `AuroraDispatcher` seam decides where they run, which is what will let the platform post to the
 main thread later without this module knowing that a main thread exists.
 
+**Sprint 05.5 — Time infrastructure: complete.**
+
+| Exit criterion | Result |
+|---|---|
+| Tests pass | 108 passing, up from 84, in 230 ms |
+| Compile | `m aurora-sdk aurora-runtime aurora-platform` rc=0 |
+| Architecture wall intact | `arch-test.sh` 27 checks, 0 failures |
+
+`AuroraClock`, `RealtimeClock`, `FrameScheduler` and a stateless `Timeline`, plus a
+`TimelineDriver` that ties them together. No physics: this answers only *how far through are
+we*, and shaping that number is the animation engine's job.
+
+Inserted before the animation engine on purpose. A spring solver that is slightly wrong
+produces one ugly animation; a clock that is wrong makes every animation wrong, and those bugs
+are unreproducible because they depend on real scheduling. With time behind a seam the whole
+suite runs without a single sleep — 108 tests in 230 ms — and interruption, cancellation and
+repeat boundaries are asserted exactly rather than approximately.
+
+`Timeline` is deliberately stateless, so seeking is just querying a different argument. A
+stateful timeline needs an explicit seek that resets counters, and that is precisely where
+off-by-one errors around repeat boundaries live. The one bug this sprint did produce was on
+such a boundary — a zero-duration timeline returned 0 instead of 1 at the instant its delay
+elapsed — and the test caught it before the code was merged.
+
 ---
 
 The interfaces live in `aurora.sdk` rather than beside their future implementations because

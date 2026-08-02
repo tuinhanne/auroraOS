@@ -144,9 +144,23 @@ where the caller expects work. `AuroraRuntime.getInstance()` before initializati
 `AuroraServiceRegistry.register()` refuses to overwrite, and a missing service names itself in
 the exception.
 
-**RULE-004 — Design tokens never execute.** Tokens are data. `SpringToken` has no `solve()`,
-`Easing` has no `interpolate()`. They describe motion; the engine that receives them computes
-it.
+**RULE-004 — Design tokens MUST be declarative.** A token describes; it never executes.
+
+Allowed:
+
+```kotlin
+Spring(stiffness = 400f, dampingRatio = 0.85f)
+Easing(0.2f, 0f, 0f, 1f)
+```
+
+Forbidden, in `aurora.sdk.design`, without exception:
+
+```kotlin
+fun solve(...)        // no
+fun interpolate(...)  // no
+fun animate(...)      // no
+fun valueAt(...)      // no
+```
 
 The reason is separation of change: a designer retunes a spring without touching the solver,
 and the solver is optimised without risking a visual change. It is also why the tokens can be
@@ -157,6 +171,39 @@ The practical test: if a file under `aurora.sdk.design` grows a function that co
 anything beyond trivial arithmetic on its own constants, it has crossed the line. `nested()`
 on `RadiusTokens` is at the boundary and is deliberately kept there — it applies a rule about
 the tokens, it does not run an animation.
+
+**RULE-005 — Runtime components communicate through events.** A direct reference from one
+service to another is forbidden unless the exception is written down and justified.
+
+Wrong:
+
+```
+VolumeService ──> NotificationService
+```
+
+Right:
+
+```
+VolumeService ──> VolumeChanged ──> AuroraEventBus ──> NotificationService
+```
+
+Direct references make a graph that only grows: every new feature adds edges, the edges become
+cycles, and eventually nothing can be built, tested or replaced on its own. Through the bus,
+a publisher does not know who listens, so a subscriber can be added, faked or deleted without
+the publisher changing.
+
+### Event naming
+
+The name should say which of the two things it is, because the API cannot.
+
+| Kind | Tense | Published with | Examples |
+|---|---|---|---|
+| Something happened | past | `publish` | `NotificationPosted`, `VolumeChanged`, `PowerButtonPressed` |
+| Current state | `Current…` | `publishSticky` | `CurrentTheme`, `CurrentVolume`, `CurrentOrientation` |
+
+Keeping these apart is what stops the event bus drifting into a state store. A notification
+being posted is an event; the theme in force is state. If every publish were sticky, a
+subscriber joining later would be handed a pile of things that already finished happening.
 
 ---
 
