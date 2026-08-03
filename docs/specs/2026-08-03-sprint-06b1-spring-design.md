@@ -43,9 +43,13 @@ token, and the most common one in the system.
 
 The obvious implementation is three branches selected on ζ, and it is a trap. The underdamped
 solution divides by `ω_d = ω√(1-ζ²)` and the overdamped one by `ω_h = ω√(ζ²-1)`; **both diverge
-as ζ → 1**, so a naive branch on `ζ == 1f` is correct only at the exact float value and loses
-significant digits either side of it. The failure is not an exception — it is silent precision
-loss, visible only to `assertVelocityMatchesDerivative` and its 5% tolerance.
+as ζ → 1**, so a naive branch on `ζ == 1f` is correct only at the exact float value and degrades
+either side of it.
+
+The failure is not an exception but silent precision loss — and, as the subsection below works
+out, **neither tier of the harness can see it**. A spring wrong in this way stays internally
+consistent, so it passes everything the contract can express while moving visibly wrongly on
+screen. That is the strongest reason to remove the branch rather than to test it carefully.
 
 ### The singularity is removable, so write it that way
 
@@ -67,16 +71,50 @@ which is exactly the critically damped solution `(A + Bt)e^(-ωt)`. **The critic
 separate formula; it is the limit of the underdamped one.** For ζ > 1 the same expression holds
 with `cos → cosh` and `sin(ω_d t)/ω_d → sinh(ω_h t)/ω_h`, which has the same limit.
 
-So the decision the spec makes, rather than leaving to an implementer:
+Both branches also share their derivative, which is worth stating because it looks as though they
+should not. Writing `E = e^(-ζωt)`, `k = ζω - v₀`:
 
-> Two branches on `ζ < 1` versus `ζ > 1`, each evaluating `sin(z)/z` (respectively `sinh(z)/z`)
-> through one helper that switches to its Taylor series `1 - z²/6 + z⁴/120` below a stated `|z|`.
+```
+y'(t) = E · [ -ζω(C + kS) + ω²(ζ²-1)·S + kC ]
+```
+
+For ζ < 1 the middle term comes from `C' = -ω_d² S` and for ζ > 1 from `C' = +ω_h² S` — and
+`-ω_d² = ω²(ζ²-1) = +ω_h²`. **The sign flip is already inside the expression.** Only `C` and `S`
+differ between branches: `cos` and `sin(z)/ω_d` against `cosh` and `sinh(z)/ω_h`.
+
+So the decision the spec makes, rather than leaving it to an implementer:
+
+> Two branches on `ζ < 1` versus `ζ > 1`, sharing one expression for `y` and one for `y'`. `S` is
+> computed as `t · sinc(z)` with `sinc(0) = 1`, and `1 - ζ²` is computed as `(1-ζ)(1+ζ)`.
 > There is **no third branch for ζ = 1**, because there is no third formula.
 
-This turns an architectural question — where to put the band, and what happens inside it — into a
-standard numerical one: the Taylor cutoff, chosen where the series and the direct evaluation
-agree to within float32 precision. That cutoff is a constant with a derivation, not a guess, and
-Task 1 states it.
+### The Taylor series is not the numerical problem, and would have hidden the one that is
+
+An earlier draft of this section prescribed a Taylor expansion of `sin(z)/z` below a cutoff.
+Working it through shows it is unnecessary and, worse, aimed at the wrong place.
+
+`sin(z)/z` evaluated directly has **no cancellation**: `sin(z)` carries about one ulp of relative
+error, `z` is exact, and the quotient about two. That holds for every `z` except zero, where the
+only requirement is a guard returning 1. A cutoff and a series would add a constant to defend,
+a branch to test, and no accuracy.
+
+The real hazard is one step earlier, in `ω_d = ω√(1-ζ²)`. At `ζ = 0.9999`, float32 computes
+`ζ² ≈ 0.9998` and the subtraction `1 - 0.9998` discards roughly four significant digits, so `ω_d`
+is wrong by about `1e-3` relative **before `sin` is ever called**. Factoring it as `(1-ζ)(1+ζ)`
+removes the cancellation entirely, because neither factor is a difference of nearly equal
+quantities.
+
+**No contract property catches this, and that is the part worth recording.** A spring computing
+`ω_d` badly still derives its value and its velocity from the *same* wrong `ω_d`, so they remain
+mutually consistent and the sampler tier passes. The completion metric uses `ω_n`, not `ω_d`, so
+its envelope is still `A·e^(-ζωt)` and the physics tier passes too. Both tiers green, the motion
+visibly wrong.
+
+That is not a gap in the tiers — it is outside what either was built to see. It needs a
+**numerical accuracy test**, which is a different kind of check: sample the float32 implementation
+against the same closed form evaluated in `Double` at `ζ = 0.9999`, and require agreement to a
+stated bound. Task 1 owns it, and the contract document is not extended, because this is a
+property of one implementation rather than of the contract.
 
 The three shipped tokens then exercise all of it: `SPRING_BOUNCY` (ζ = 0.6) and `SPRING_GENTLE`
 (ζ = 0.85) take the sin branch, `SPRING_SNAPPY` (ζ = 1.0) lands exactly on the removable
@@ -131,14 +169,17 @@ Not a negative test suite. Its subject is the **property**, not the spring. It s
 | envelope decays at `ω_d` where it should decay at `ω_n` | the metric's monotonicity | physics tier only |
 | velocity omits `ζ` from the derivative | the derivative property | **both tiers** — see below |
 | overdamped branch taken for `ζ < 1` | branch selection | **both tiers** |
-| Taylor cutoff set absurdly wide | §2's numerical constant | sampler tier only |
+| `1 - ζ²` by direct subtraction, sampled at `ζ = 0.9999` | §2's cancellation fix | **neither tier** — the accuracy test alone |
 
 Each lives in the test tree beside the 06B.0 fixtures, each is declared in the RULE-015 pairing
 block, and each must be shown red **before** Task 3 runs the real spring. A property that has
 never been red *on this family* has not been shown to check anything *for this family*.
 
-The last row is worth its own note: it is the only check on §2's Taylor cutoff, and it is what
-stops that constant from being widened later to make something else pass.
+The last row is the interesting one, and it is deliberately not a contract property. A spring with
+a badly computed `ω_d` stays internally consistent, so both tiers pass it — the failure is
+invisible to everything the contract can express. Declaring its expected red set as *neither
+tier* is the point: it records, in the pairing block, that this hazard is guarded by an accuracy
+test and by nothing else. Removing that test would leave no red anywhere.
 
 ### Orthogonality is required where it is achievable, and named where it is not
 
@@ -223,8 +264,10 @@ turned out to be, which is why §4 leaves its rows pending rather than guessing.
 
 ## 7. Exit criteria
 
-- [ ] One closed form covering ζ < 1 and ζ > 1 with no third branch, and a stated Taylor cutoff
-      with its derivation
+- [ ] One closed form covering ζ < 1 and ζ > 1 with no third branch, sharing one expression for
+      `y` and one for `y'`; `1 - ζ²` factored as `(1-ζ)(1+ζ)`, and `sinc(0) = 1` guarded
+- [ ] A numerical accuracy test against a `Double` reference at `ζ = 0.9999`, with a stated bound
+      — the only guard on the cancellation fix, since both tiers pass a spring that gets it wrong
 - [ ] All three shipped spring tokens sampled, including `SPRING_SNAPPY` at exactly ζ = 1
 - [ ] Every physics property shown **red** against a deliberately wrong spring, before the real
       one is run
