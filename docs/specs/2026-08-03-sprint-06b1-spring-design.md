@@ -111,10 +111,19 @@ its envelope is still `A·e^(-ζωt)` and the physics tier passes too. Both tier
 visibly wrong.
 
 That is not a gap in the tiers — it is outside what either was built to see. It needs a
-**numerical accuracy test**, which is a different kind of check: sample the float32 implementation
-against the same closed form evaluated in `Double` at `ζ = 0.9999`, and require agreement to a
-stated bound. Task 1 owns it, and the contract document is not extended, because this is a
-property of one implementation rather than of the contract.
+**numerical stability test**, using a `Double` evaluation of the same closed form as the reference
+implementation: sample both at `ζ = 0.9999` and require agreement to a stated bound.
+
+*Stability* rather than *accuracy*, because accuracy is the symptom and the property is the
+implementation's behaviour under cancellation, overflow, underflow and precision loss. The name
+also survives a change of algorithm: if a later sprint replaces the closed form with a minimax or
+Padé approximation, the test still asks the right question.
+
+This is a **third kind of evidence**, not an extension of the two tiers. The sampler tier's oracle
+is the contract and it checks internal consistency; the physics tier's oracle is the contract and
+it checks semantics; this one's oracle is a higher-precision evaluation of the same mathematics,
+and it checks arithmetic. Task 1 owns it, and the contract document is not extended, because this
+is a property of one implementation rather than of the contract.
 
 The three shipped tokens then exercise all of it: `SPRING_BOUNCY` (ζ = 0.6) and `SPRING_GENTLE`
 (ζ = 0.85) take the sin branch, `SPRING_SNAPPY` (ζ = 1.0) lands exactly on the removable
@@ -169,7 +178,7 @@ Not a negative test suite. Its subject is the **property**, not the spring. It s
 | envelope decays at `ω_d` where it should decay at `ω_n` | the metric's monotonicity | physics tier only |
 | velocity omits `ζ` from the derivative | the derivative property | **both tiers** — see below |
 | overdamped branch taken for `ζ < 1` | branch selection | **both tiers** |
-| `1 - ζ²` by direct subtraction, sampled at `ζ = 0.9999` | §2's cancellation fix | **neither tier** — the accuracy test alone |
+| `1 - ζ²` by direct subtraction, sampled at `ζ = 0.9999` | §2's cancellation fix | **neither tier** — the stability test alone |
 
 Each lives in the test tree beside the 06B.0 fixtures, each is declared in the RULE-015 pairing
 block, and each must be shown red **before** Task 3 runs the real spring. A property that has
@@ -178,8 +187,11 @@ never been red *on this family* has not been shown to check anything *for this f
 The last row is the interesting one, and it is deliberately not a contract property. A spring with
 a badly computed `ω_d` stays internally consistent, so both tiers pass it — the failure is
 invisible to everything the contract can express. Declaring its expected red set as *neither
-tier* is the point: it records, in the pairing block, that this hazard is guarded by an accuracy
+tier* is the point: it records, in the pairing block, that this hazard is guarded by the stability
 test and by nothing else. Removing that test would leave no red anywhere.
+
+It is therefore not a fixture of the contract but a fixture of the **contract's boundary** — its
+job is to demonstrate what the contract does not promise.
 
 ### Orthogonality is required where it is achievable, and named where it is not
 
@@ -266,8 +278,9 @@ turned out to be, which is why §4 leaves its rows pending rather than guessing.
 
 - [ ] One closed form covering ζ < 1 and ζ > 1 with no third branch, sharing one expression for
       `y` and one for `y'`; `1 - ζ²` factored as `(1-ζ)(1+ζ)`, and `sinc(0) = 1` guarded
-- [ ] A numerical accuracy test against a `Double` reference at `ζ = 0.9999`, with a stated bound
-      — the only guard on the cancellation fix, since both tiers pass a spring that gets it wrong
+- [ ] A numerical stability test against a `Double` reference evaluation at `ζ = 0.9999`, with a
+      stated bound — the only guard on the cancellation fix, since both tiers pass a spring that
+      gets it wrong
 - [ ] All three shipped spring tokens sampled, including `SPRING_SNAPPY` at exactly ζ = 1
 - [ ] Every physics property shown **red** against a deliberately wrong spring, before the real
       one is run
