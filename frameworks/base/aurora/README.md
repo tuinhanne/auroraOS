@@ -235,7 +235,7 @@ including pathological ones, with no device and no waiting.
 produces the same result, independent of wall clock, thread and frame rate. Host tests and a
 device must agree frame for frame.
 
-All mutable animation state lives in an `AnimationStrategy`. An `Interpolator` is a pure
+All mutable animation state lives in a `MotionSampler`. An `Interpolator` is a pure
 function, and a design token is data; state hiding in either would make `seek()` and
 `restart()` silently stop being repeatable, because `transform(0.5f)` twice would return two
 different numbers.
@@ -296,14 +296,22 @@ so the rule fails the day someone adds a `var`.
 
 | Layer | Holds | Examples |
 |---|---|---|
-| `aurora.sdk.animation` | concepts and contracts | `Animation`, `AnimationSpec`, `AnimationState`, `AnimationHandle`, `AnimationStrategy`, `Animator`, `AnimationController`, `Interpolator` |
-| `aurora.runtime.animation` | the engine | `AnimationStateMachine`, `ExecutionTimeline`, `TimedStrategy`, `AnimationRegistry`, `AnimationHandleImpl`, `DefaultAnimator`, `DefaultAnimationController`, `AnimationDriver` |
+| `aurora.sdk.animation` | concepts and contracts | `Animation`, `AnimationSpec`, `AnimationState`, `AnimationHandle`, `MotionSample`, `MotionSampler`, `Animator`, `AnimationController`, `Interpolator` |
+| `aurora.runtime.animation` | the engine | `AnimationStateMachine`, `ExecutionTimeline`, `TimedSampler`, `AnimationRegistry`, `AnimationHandleImpl`, `DefaultAnimator`, `DefaultAnimationController`, `AnimationDriver` |
 | `aurora.platform.animation` | the Android bridge | `ChoreographerAnimationDriver` — Sprint 08 |
 
-Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedStrategy` is
-the only `AnimationStrategy`, and it delegates to `Timeline`. Sprint 06B adds `SpringStrategy`,
-`BezierInterpolator`, `DecayStrategy`, `SnapStrategy` and `FlingStrategy` as new files,
-touching none of the classes above.
+Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedSampler` is
+the only `MotionSampler`, and it delegates to `Timeline`. Sprint 06B.1 adds the closed-form
+sampler infrastructure — `samplerFor` dispatch, the analytic-derivative helper, the sampler test
+harness — with no solver yet; 06B.2 adds the solvers that exercise it: spring, decay and snap,
+plus `BezierInterpolator`, which is an `Interpolator` rather than a sampler, because a Bézier
+shapes progress that time has already produced, while a spring produces progress from energy.
+They plug into different seams and ADR-002 keeps them apart deliberately.
+
+One existing class does change: `AnimationHandleImpl.samplerFor` currently throws for every
+`PhysicsSpec`, and 06B.2 replaces those throws with branches. That is a `when` in one private
+function, and it is the *only* engine change physics requires — the state machine, the registry,
+the driver, the handle's lifecycle and every public interface stay as they are.
 
 Timing bugs and physics bugs look identical from the outside — something moved wrong — so the
 half that can be proven exactly is built first. When a pixel is wrong in 06B, it is the
@@ -426,10 +434,19 @@ real test.
 **Sprint 05 — Configuration.** Read system properties and overlays so the runtime can toggle
 features without a rebuild.
 
-**Sprint 06B — Physics.** `SpringStrategy`, `BezierInterpolator`, `DecayStrategy`,
-`SnapStrategy` and `FlingStrategy`, each benchmarked. All are new files in
-`aurora.runtime.animation`; the engine does not change, which is the claim Sprint 06A exists
-to make true.
+**Sprint 06B.1 — Closed-form infrastructure.** `samplerFor` dispatch, `TimedSampler` moved onto
+the new `MotionSampler` contract, the analytic-derivative helper, and the sampler test harness —
+no solver. This is where the dispatch and the harness are proven correct before a single solver
+depends on them.
+
+**Sprint 06B.2 — Closed-form solvers.** The solvers that exercise 06B.1's infrastructure: spring,
+decay and snap samplers in `aurora.runtime.animation`, plus `BezierInterpolator`, each
+benchmarked. New files, apart from the `when` in `AnimationHandleImpl.samplerFor` that has to
+learn to dispatch them.
+
+Two questions have to be answered before the first solver is written, both recorded in ADR-002:
+what a decay normalises against when it has no intrinsic target, and what happens when
+`from == to` and the velocity conversion divides by the range.
 
 **Sprint 08 — Android platform bridge.** `ChoreographerFrameScheduler` and
 `ChoreographerAnimationDriver` in `aurora.platform`. `AnimationController.tick(FrameTime)` is

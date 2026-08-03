@@ -264,17 +264,14 @@ class AnimationLifecycleTest {
         assertTrue(t.hasStarted)
     }
 
-    // --- TimedStrategy -------------------------------------------------------
+    // --- TimedSampler -------------------------------------------------------
 
     @Test
     fun timedProgressIsLinearInElapsedTime() {
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200)))
-        s.advance(0L, 0L)
-        assertEquals(0f, s.progress, 1e-6f)
-        s.advance(100 * ms, 100 * ms)
-        assertEquals(0.5f, s.progress, 1e-6f)
-        s.advance(200 * ms, 100 * ms)
-        assertEquals(1f, s.progress, 1e-6f)
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200)))
+        assertEquals(0f, s.sampleAt(0L).value, 1e-6f)
+        assertEquals(0.5f, s.sampleAt(100 * ms).value, 1e-6f)
+        assertEquals(1f, s.sampleAt(200 * ms).value, 1e-6f)
     }
 
     @Test
@@ -282,97 +279,71 @@ class AnimationLifecycleTest {
         // The two must not be conflated. progress is what the timeline says; easedProgress is
         // what the curve makes of it, and the value a caller sees comes from the latter.
         val square = Interpolator { it * it }
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200), square))
-        s.advance(100 * ms, 16 * ms)
-        assertEquals(0.5f, s.progress, 1e-6f)
-        assertEquals(0.25f, s.easedProgress, 1e-6f)
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200), square))
+        assertEquals(0.25f, s.sampleAt(100 * ms).value, 1e-6f)
     }
 
     @Test
-    fun aTimedStrategyIgnoresTheDelta() {
+    fun theSameElapsedByDifferentRoutesAgrees() {
         // Progress comes from elapsed time, never from accumulating deltas. Two runs reaching
         // the same elapsed time by different routes must agree, or a dropped frame drifts.
         val spec = TimedSpec(Timeline.ofMillis(200))
-        val smooth = TimedStrategy(spec)
-        val hitched = TimedStrategy(spec)
+        val smooth = TimedSampler(spec)
+        val hitched = TimedSampler(spec)
 
-        smooth.advance(50 * ms, 50 * ms)
-        smooth.advance(100 * ms, 50 * ms)
-
-        hitched.advance(100 * ms, 100 * ms)   // one long frame instead of two short ones
-
-        assertEquals(smooth.progress, hitched.progress, 0f)
+        assertEquals(smooth.sampleAt(100 * ms).value, hitched.sampleAt(100 * ms).value, 0f)
     }
 
     @Test
     fun isFinishedFollowsTheTimeline() {
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200)))
-        s.advance(199 * ms, 16 * ms)
-        assertFalse(s.isFinished)
-        s.advance(200 * ms, 1 * ms)
-        assertTrue(s.isFinished)
+        val spec = TimedSpec(Timeline.ofMillis(200))
+        val s = TimedSampler(spec)
+        assertFalse(spec.isFinished(199 * ms, s.sampleAt(199 * ms)))
+        assertTrue(spec.isFinished(200 * ms, s.sampleAt(200 * ms)))
     }
 
     @Test
     fun aDelayHoldsProgressAtZero() {
-        val s = TimedStrategy(
-            TimedSpec(Timeline(durationNanos = 200 * ms, delayNanos = 100 * ms))
-        )
-        s.advance(50 * ms, 16 * ms)
-        assertEquals(0f, s.progress, 1e-6f)
-        assertFalse(s.isFinished)
-        s.advance(200 * ms, 16 * ms)
-        assertEquals(0.5f, s.progress, 1e-6f)
+        val spec = TimedSpec(Timeline(durationNanos = 200 * ms, delayNanos = 100 * ms))
+        val s = TimedSampler(spec)
+        assertEquals(0f, s.sampleAt(50 * ms).value, 1e-6f)
+        assertFalse(spec.isFinished(50 * ms, s.sampleAt(50 * ms)))
+        assertEquals(0.5f, s.sampleAt(200 * ms).value, 1e-6f)
     }
 
     @Test
     fun anInfiniteTimelineNeverFinishes() {
-        val s = TimedStrategy(
-            TimedSpec(Timeline(durationNanos = 100 * ms, repeatCount = Timeline.REPEAT_INFINITE))
+        val spec = TimedSpec(
+            Timeline(durationNanos = 100 * ms, repeatCount = Timeline.REPEAT_INFINITE)
         )
-        s.advance(10_000 * ms, 16 * ms)
-        assertFalse(s.isFinished)
+        val s = TimedSampler(spec)
+        assertFalse(spec.isFinished(10_000 * ms, s.sampleAt(10_000 * ms)))
     }
 
     @Test
-    fun resetClearsProgressAndTheFinishedFlag() {
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200)))
-        s.advance(300 * ms, 16 * ms)
-        assertTrue(s.isFinished)
-        s.reset()
-        assertEquals(0f, s.progress, 1e-6f)
-        assertFalse(s.isFinished)
-    }
-
-    @Test
-    fun seekToOnATimedStrategyDoesNotThrow() {
-        // The elapsed move is ExecutionTimeline job; this hook exists for strategies that
-        // carry integrator state, and a timed one has none to clear.
-        TimedStrategy(TimedSpec(Timeline.ofMillis(200))).seekTo(0.5f)
-    }
-
-    @Test
-    fun aFreshStrategyReportsTheCurveAtZeroRatherThanZero() {
-        // Pins the initialisation contract. easedProgress is computed from the interpolator in a
-        // property initialiser that reads the constructor parameter, and a strategy handed out
-        // before its first advance() must already report the shaped value, not a bare 0f.
+    fun aFreshSamplerStartsAtTheCurveAtZero() {
+        // reset() is gone: a sampler is built per execution, so "fresh" is the only state a new
+        // one can be in. This is what that test was really asserting.
+        //
+        // Also pins the initialisation contract: value is computed from the interpolator on
+        // every call, and a sampler queried before any other call must already report the
+        // shaped value, not a bare 0f.
         val offset = Interpolator { p -> 0.25f + 0.5f * p }
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200), offset))
-        assertEquals(0f, s.progress, 0f)
-        assertEquals(0.25f, s.easedProgress, 1e-6f)
-        assertFalse(s.isFinished)
+        val spec = TimedSpec(Timeline.ofMillis(200), offset)
+        val s = TimedSampler(spec)
+        val fresh = s.sampleAt(0L)
+        assertEquals(0.25f, fresh.value, 1e-6f)
+        assertFalse(spec.isFinished(0L, fresh))
     }
 
     @Test
     fun anOvershootingCurveSurvivesUnclamped() {
-        // AnimationStrategy documents that easedProgress may legitimately leave 0..1, and
-        // advance() applies no clamp. Nothing else enforces that, so a clamp added later would
-        // flatten every bouncy spring in Sprint 06B while still looking correct.
+        // MotionSample documents that value may legitimately leave 0..1, and sampleAt() applies
+        // no clamp. Nothing else enforces that, so a clamp added later would flatten every
+        // bouncy spring in Sprint 06B while still looking correct.
         val overshoot = Interpolator { p -> p * 1.4f }
-        val s = TimedStrategy(TimedSpec(Timeline.ofMillis(200), overshoot))
-        s.advance(200 * ms, 16 * ms)
-        assertEquals(1f, s.progress, 1e-6f)
-        assertEquals(1.4f, s.easedProgress, 1e-6f)
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200), overshoot))
+        assertEquals(1.4f, s.sampleAt(200 * ms).value, 1e-6f)
     }
 
     @Test
@@ -380,12 +351,48 @@ class AnimationLifecycleTest {
         // Surprising and correct. A timeline that reverses on repeat with an odd repeatCount runs
         // its last iteration backwards, so it ends where it started. Written down because it
         // reads like a bug the first time someone sees a finished animation reporting 0.
-        val s = TimedStrategy(
-            TimedSpec(Timeline(durationNanos = 100 * ms, repeatCount = 1, reverseOnRepeat = true))
+        val spec = TimedSpec(
+            Timeline(durationNanos = 100 * ms, repeatCount = 1, reverseOnRepeat = true)
         )
-        s.advance(200 * ms, 16 * ms)
-        assertTrue(s.isFinished)
-        assertEquals(0f, s.progress, 1e-6f)
+        val s = TimedSampler(spec)
+        val sample = s.sampleAt(200 * ms)
+        assertTrue(spec.isFinished(200 * ms, sample))
+        assertEquals(0f, sample.value, 1e-6f)
+    }
+
+    @Test
+    fun velocityIsTheRateOfChangeOfValue() {
+        // A linear 200ms animation covers the unit interval in 0.2s, so it moves at 5 per second
+        // throughout.
+        //
+        // The tolerance is loose on purpose. The contract says velocity is the rate of change of
+        // value; central finite difference is how this sprint produces it, and the epsilon it
+        // uses is an implementation detail. A test tight enough to notice the epsilon changing
+        // would be testing the method rather than the quantity, and would fail a sampler that
+        // was still perfectly correct.
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200)))
+        assertEquals(5f, s.sampleAt(100 * ms).velocity, 0.25f)
+    }
+
+    @Test
+    fun velocityIsNearZeroWhereTheCurveIsFlat() {
+        // Past the end of the timeline the value holds, so nothing is moving. Same reasoning
+        // about tolerance: the claim is "not moving", not a particular numerical zero.
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200)))
+        assertEquals(0f, s.sampleAt(400 * ms).velocity, 0.25f)
+    }
+
+    @Test
+    fun velocityIsPositiveWhileAdvancingAndTracksTheCurve() {
+        // The property, stated without depending on any particular number: an ease-out is fast
+        // early and slow late, so its velocity must decrease across the animation. This holds
+        // for any correct derivative by any method.
+        val easeOut = Interpolator { p -> 1f - (1f - p) * (1f - p) }
+        val s = TimedSampler(TimedSpec(Timeline.ofMillis(200), easeOut))
+        val early = s.sampleAt(20 * ms).velocity
+        val late = s.sampleAt(180 * ms).velocity
+        assertTrue("an ease-out starts fast, got $early", early > 0f)
+        assertTrue("and slows down, got $early then $late", late < early)
     }
 
     // --- handle lifecycle ----------------------------------------------------
@@ -419,10 +426,10 @@ class AnimationLifecycleTest {
         override fun onUpdate(
             handle: AnimationHandle,
             executionId: Long,
-            progress: Float,
+            elapsedNanos: Long,
             value: Float,
         ) {
-            events += "update#$executionId:$progress"
+            events += "update#$executionId:$elapsedNanos"
         }
     }
 
@@ -496,17 +503,17 @@ class AnimationLifecycleTest {
         h.play()
         r.tick(frame(0))
         r.tick(frame(1))
-        val held = h.progress
+        val held = h.normalizedPosition
         h.pause()
 
         repeat(30) { r.tick(frame(2L + it)) }
-        assertEquals(held, h.progress, 0f)
+        assertEquals(held, h.normalizedPosition, 0f)
 
         h.resume()
         r.tick(frame(40))
-        assertEquals("resuming loses no elapsed time", held, h.progress, 1e-6f)
+        assertEquals("resuming loses no elapsed time", held, h.normalizedPosition, 1e-6f)
         r.tick(frame(41))
-        assertTrue(h.progress > held)
+        assertTrue(h.normalizedPosition > held)
     }
 
     @Test
@@ -568,11 +575,11 @@ class AnimationLifecycleTest {
         h.play()
         r.tick(frame(0))
         r.tick(frame(4))
-        assertTrue(h.progress > 0.5f)
+        assertTrue(h.normalizedPosition > 0.5f)
 
         h.restart()
         r.tick(frame(5))
-        assertEquals("a new execution starts at zero", 0f, h.progress, 1e-6f)
+        assertEquals("a new execution starts at zero", 0f, h.normalizedPosition, 1e-6f)
     }
 
     @Test
@@ -606,7 +613,7 @@ class AnimationLifecycleTest {
             "resume" to { h.resume() },
             "cancel" to { h.cancel() },
             "restart" to { h.restart() },
-            "seek" to { h.seek(0.5f) },
+            "seekToElapsed" to { h.seekToElapsed(0L) },
         ).forEach { (name, call) ->
             try {
                 call()
@@ -619,8 +626,8 @@ class AnimationLifecycleTest {
 
     @Test
     fun everyQueryAfterDisposeStillAnswers() {
-        // Queries never throw, in any state. A teardown path reading progress to log it must
-        // not become the thing that crashes teardown.
+        // Queries never throw, in any state. A teardown path reading normalizedPosition to log
+        // it must not become the thing that crashes teardown.
         val r = registry()
         val h = handle(r)
         h.play()
@@ -631,7 +638,7 @@ class AnimationLifecycleTest {
         assertTrue(h.isDisposed)
         assertFalse(h.isRunning)
         assertEquals(0L, h.executionId)
-        h.progress
+        h.normalizedPosition
         h.value
         h.animation
     }
@@ -688,13 +695,14 @@ class AnimationLifecycleTest {
     // --- seek -----------------------------------------------------------------
 
     @Test
-    fun seekMovesTheExecutionAndPublishesImmediately() {
+    fun seekingMovesTheExecutionAndPublishesImmediately() {
         val r = registry()
-        val h = handle(r, durationMs = 100)
+        val spec = TimedSpec(Timeline.ofMillis(100))
+        val h = DefaultAnimator(r).create(Animation("test", spec))
         h.play()
         r.tick(frame(0))
-        h.seek(0.25f)
-        assertEquals(0.25f, h.progress, 1e-6f)
+        h.seekToElapsed(spec.elapsedForProgress(0.25f))
+        assertEquals(0.25f, h.normalizedPosition, 1e-6f)
         assertEquals(0.25f, h.value, 1e-6f)
     }
 
@@ -703,28 +711,30 @@ class AnimationLifecycleTest {
         // RULE-009 at the API surface. Timeline is stateless, so this holds by construction;
         // the test is here to notice if it stops.
         val r = registry()
-        val h = handle(r, durationMs = 100)
+        val spec = TimedSpec(Timeline.ofMillis(100))
+        val h = DefaultAnimator(r).create(Animation("test", spec))
         h.play()
         r.tick(frame(0))
-        h.seek(0.4f)
+        h.seekToElapsed(spec.elapsedForProgress(0.4f))
         val first = h.value
-        h.seek(0.9f)
-        h.seek(0.4f)
+        h.seekToElapsed(spec.elapsedForProgress(0.9f))
+        h.seekToElapsed(spec.elapsedForProgress(0.4f))
         assertEquals(first, h.value, 0f)
     }
 
     @Test
     fun seekIsLegalWhileScheduledAndWhilePaused() {
         val r = registry()
-        val h = handle(r, durationMs = 100)
+        val spec = TimedSpec(Timeline.ofMillis(100))
+        val h = DefaultAnimator(r).create(Animation("test", spec))
         h.play()
-        h.seek(0.5f)                       // SCHEDULED
-        assertEquals(0.5f, h.progress, 1e-6f)
+        h.seekToElapsed(spec.elapsedForProgress(0.5f))                       // SCHEDULED
+        assertEquals(0.5f, h.normalizedPosition, 1e-6f)
 
         r.tick(frame(0))
         h.pause()
-        h.seek(0.75f)                      // PAUSED
-        assertEquals(0.75f, h.progress, 1e-6f)
+        h.seekToElapsed(spec.elapsedForProgress(0.75f))                      // PAUSED
+        assertEquals(0.75f, h.normalizedPosition, 1e-6f)
     }
 
     @Test
@@ -737,7 +747,7 @@ class AnimationLifecycleTest {
         r.tick(frame(2))
         assertEquals(AnimationState.COMPLETED, h.state)
         try {
-            h.seek(0.5f)
+            h.seekToElapsed(0L)
             fail("a finished execution has no position to move")
         } catch (expected: IllegalStateException) {
             // expected
@@ -745,13 +755,14 @@ class AnimationLifecycleTest {
     }
 
     @Test
-    fun seekRejectsProgressOutsideTheUnitRange() {
+    fun seekingBeforeTheExecutionBeganIsRejected() {
+        // The unit-range check went with seek(progress). Elapsed has one bound, not two.
         val r = registry()
         val h = handle(r)
         h.play()
         try {
-            h.seek(1.5f)
-            fail("seek takes 0..1")
+            h.seekToElapsed(-1L)
+            fail("an execution cannot be positioned before it began")
         } catch (expected: IllegalArgumentException) {
             // expected
         }
@@ -838,9 +849,9 @@ class AnimationLifecycleTest {
         // handle from inside onUpdate must not leave a LATER listener holding the previous
         // execution's id beside the new execution's numbers.
         //
-        // Ticking to a frame where progress is already non-zero before the restart fires is
-        // what makes this test able to fail: at elapsed 0 the pre- and post-restart progress
-        // are both 0f by coincidence, so a version built on that one frame alone cannot tell
+        // Ticking to a frame where elapsedNanos is already non-zero before the restart fires is
+        // what makes this test able to fail: at elapsed 0 the pre- and post-restart elapsed are
+        // both 0L by coincidence, so a version built on that one frame alone cannot tell
         // captured values from live ones that happen to match. Advancing once first, then
         // attaching the listeners and restarting from the following tick, gives the two paths
         // different numbers.
@@ -849,13 +860,13 @@ class AnimationLifecycleTest {
         h.play()
         r.tick(frame(0))
 
-        val seen = mutableListOf<Triple<Long, Float, Float>>()
+        val seen = mutableListOf<Triple<Long, Long, Float>>()
         var restarted = false
         h.addListener(object : AnimationListener {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
                 if (!restarted) {
@@ -868,22 +879,22 @@ class AnimationLifecycleTest {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
-                seen += Triple(executionId, progress, value)
+                seen += Triple(executionId, elapsedNanos, value)
             }
         })
 
-        r.tick(frame(1))       // 16ms of 32ms: progress 0.5 before the first listener restarts it
+        r.tick(frame(1))       // 16ms of 32ms: elapsed 16ms before the first listener restarts it
 
         // The second listener is called during the dispatch the first one restarted from.
-        // Whatever id it is given, the progress and value must be the ones that id's execution
+        // Whatever id it is given, the elapsed and value must be the ones that id's execution
         // actually reached this frame - not the zero the restart just reset the live fields to.
         assertEquals(1, seen.size)
-        val (id, progress, value) = seen.single()
+        val (id, elapsedNanos, value) = seen.single()
         assertEquals("the restart must not rewrite the numbers this id was paired with", 0L, id)
-        assertEquals(0.5f, progress, 1e-6f)
+        assertEquals(16 * ms, elapsedNanos)
         assertEquals(0.5f, value, 1e-6f)
     }
 
@@ -898,7 +909,7 @@ class AnimationLifecycleTest {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
                 if (restarts == 0) {
@@ -924,7 +935,7 @@ class AnimationLifecycleTest {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
                 handle.dispose()

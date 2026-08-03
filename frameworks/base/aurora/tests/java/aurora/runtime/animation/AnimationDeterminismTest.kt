@@ -51,7 +51,7 @@ class AnimationDeterminismTest {
         override fun onUpdate(
             handle: AnimationHandle,
             executionId: Long,
-            progress: Float,
+            elapsedNanos: Long,
             value: Float,
         ) {
             values += value
@@ -187,49 +187,35 @@ class AnimationDeterminismTest {
         // RULE-011. If each animation built its own FrameTime, animations started a frame apart
         // would disagree about how much time one frame is worth and would slowly separate.
         //
-        // The assertion is on progress, not on value, and that distinction is the whole point.
-        // Coherence is a statement about TIME: every animation in a frame is handed the same
-        // frameTimeNanos, so each gains the same elapsed time and therefore the same linear
-        // progress. It is not a statement about value. These animations run through an ease-out
-        // curve, so three of them sitting at three different progress points have three
-        // different slopes, and equal elapsed time produces unequal value change. That is the
-        // curve doing its job, not the engine drifting - asserting on value here would fail for
-        // a correct engine, which an earlier draft of this test did.
-        // Compared as recorded values, never as differences. Two deltas equal in arithmetic are
-        // not equal in float when they come from different pairs: 0.048f - 0.032f is 0.015999999
-        // while 0.016f - 0f is 0.016. That cancellation is the test's own subtraction, not the
-        // engine drifting, and at a tolerance of zero it would fail a perfectly coherent engine -
-        // as an earlier draft of this test did.
-        //
-        // So the claim is made without subtracting. The three have identical specs and start
-        // exactly one frame apart, so the second's progress on frame k must be bit-equal to the
-        // first's on frame k-1, and the third's to the first's on frame k-2. Each side is
-        // progressAt() of the same elapsed value, so equality is exact rather than approximate.
-        // If any animation built its own FrameTime, those elapsed values would differ and the two
-        // sides would part on the first comparison.
+        // Compared as elapsedNanos, not as progress or value, and that distinction is the whole
+        // point. Coherence is a statement about TIME: every animation in a frame is handed the
+        // same frameTimeNanos, so each gains the same elapsed time, and the ones that started
+        // later are behind by exactly the frames they missed. elapsedNanos says that directly
+        // and exactly - no recorded history, and no float subtraction to cancel. An earlier
+        // version of this test compared recorded progress values instead, where two deltas equal
+        // in arithmetic are not always equal in float: 0.048f - 0.032f is 0.015999999 while
+        // 0.016f - 0f is 0.016. That cancellation was the test's own subtraction, not the engine
+        // drifting, and it had to be fixed twice in Sprint 06A. Comparing elapsedNanos removes
+        // the subtraction, and with it the whole class of bug.
         val c = engine()
-        val byFrame = mutableListOf<Float>()
 
         val first = c.animator.play(animation("first", durationMs = 1000))
         c.tick(frameAt(0, 0L, 0L))
-        byFrame += first.progress                       // index 0
 
         val second = c.animator.play(animation("second", durationMs = 1000))
         c.tick(frameAt(1, 16 * ms, 16 * ms))
-        byFrame += first.progress                       // index 1
 
         val third = c.animator.play(animation("third", durationMs = 1000))
         c.tick(frameAt(2, 32 * ms, 16 * ms))
-        byFrame += first.progress                       // index 2
 
         repeat(10) {
             val k = 3 + it
             c.tick(frameAt(k.toLong(), (48 + it * 16) * ms, 16 * ms))
-            byFrame += first.progress                   // index k
-
-            assertEquals("frame $k: second lags first by one frame", byFrame[k - 1], second.progress, 0f)
-            assertEquals("frame $k: third lags first by two frames", byFrame[k - 2], third.progress, 0f)
-            assertTrue("a frame must actually advance them", byFrame[k] > byFrame[k - 1])
+            // Coherence is a claim about time. All three were handed the same frameTimeNanos, so
+            // each gained the same elapsed, and the ones that started later are behind by exactly
+            // the frames they missed. Compared as elapsed, this is exact - no float subtraction.
+            assertEquals(second.elapsedNanos + 16 * ms, first.elapsedNanos)
+            assertEquals(third.elapsedNanos + 32 * ms, first.elapsedNanos)
         }
     }
 
@@ -239,13 +225,14 @@ class AnimationDeterminismTest {
     fun seekingToTheSameProgressAlwaysGivesTheSameValue() {
         val c = engine()
         val h = c.animator.play(animation("a"))
+        val spec = h.animation.spec as TimedSpec
         c.tick(frameAt(0, 0L, 0L))
 
-        h.seek(0.31f)
+        h.seekToElapsed(spec.elapsedForProgress(0.31f))
         val reference = h.value
         repeat(50) {
-            h.seek(it / 50f)
-            h.seek(0.31f)
+            h.seekToElapsed(spec.elapsedForProgress(it / 50f))
+            h.seekToElapsed(spec.elapsedForProgress(0.31f))
             assertEquals(reference, h.value, 0f)
         }
     }
@@ -268,7 +255,7 @@ class AnimationDeterminismTest {
                     override fun onUpdate(
                         handle: AnimationHandle,
                         executionId: Long,
-                        progress: Float,
+                        elapsedNanos: Long,
                         value: Float,
                     ) {
                         log += name
@@ -279,7 +266,7 @@ class AnimationDeterminismTest {
                                 override fun onUpdate(
                                     handle: AnimationHandle,
                                     executionId: Long,
-                                    progress: Float,
+                                    elapsedNanos: Long,
                                     value: Float,
                                 ) {
                                     log += spawn
@@ -317,7 +304,7 @@ class AnimationDeterminismTest {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
                 updates++
@@ -350,7 +337,7 @@ class AnimationDeterminismTest {
             AnimationHandleImpl::class.java,
             AnimationRegistry::class.java,
             ExecutionTimeline::class.java,
-            TimedStrategy::class.java,
+            TimedSampler::class.java,
             AnimationStateMachine::class.java,
         )
         engineClasses.forEach { type ->

@@ -21,7 +21,7 @@ package aurora.sdk.animation
  *
  * ## Stateless, without exception
  *
- * RULE-009 requires that all mutable state live in an [AnimationStrategy]. An interpolator
+ * RULE-009 requires that all mutable state live in a [MotionSampler]. An interpolator
  * that remembered anything between calls — a previous velocity, a last progress — would make
  * `seek()` and `restart()` non-repeatable, because `transform(0.5f)` twice would return two
  * different numbers. Implementations must be pure functions.

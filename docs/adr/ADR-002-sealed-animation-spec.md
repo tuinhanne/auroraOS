@@ -63,6 +63,13 @@ pure and `seek(0.5)` twice can return two different values. It breaks RULE-009 d
   factor, leaving only velocity to be scaled. That is what lets a solver be built from the spec
   alone, with no knowledge of `from` and `to`, which keeps `strategyFor(spec)` single-parameter
   and Sprint 06B additive rather than a change to `AnimationHandleImpl`.
+- **Superseded in part by Sprint 06A.5.** This ADR justified physics rejecting `seekTo` by saying
+  a spring's position is the result of integrating from its previous state. For a closed-form
+  spring that is false — its position is a function of elapsed time. The real obstacle was that
+  progress is not injective for an overshooting spring: 0.9 occurs at three different times, so
+  `seek(0.9f)` has no single answer. Sprint 06A.5 removes the question by seeking in elapsed
+  time, which always has one. The decision this ADR records — a sealed spec with a timed and a
+  physics branch — is unaffected.
 
 ## Left open for Sprint 06B
 

@@ -38,7 +38,23 @@ import aurora.sdk.time.Timeline
  * Sprint 06A implements [TimedSpec] only. A [PhysicsSpec] is accepted by the type system and
  * rejected loudly by the engine, in a message naming the sprint that will implement it.
  */
-sealed interface AnimationSpec
+sealed interface AnimationSpec {
+
+    /**
+     * Whether a motion described by this spec has ended.
+     *
+     * The rule belongs here and not on the sampler for two reasons. It is made of this spec's
+     * own numbers — a spring rests inside its `restDelta` and below its `restVelocity` — so a
+     * sampler reporting it would be applying a rule it does not own, and every alternative
+     * spring solver would have to re-implement it identically. And a timed animation cannot
+     * derive it from a value at all: a timeline ends because time ran out, not because the value
+     * arrived anywhere, which is why this takes [elapsedNanos] as well as [sample].
+     *
+     * Putting it here also keeps a `when` over spec kinds out of the engine. A spec added in a
+     * later sprint brings its own rule with it and `AnimationHandleImpl` never learns it exists.
+     */
+    fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean
+}
 
 /**
  * Time decides progress.
@@ -58,7 +74,7 @@ data class TimedSpec(
      *
      * The inverse of [Timeline.progressAt], and the **only** place the progress-to-elapsed
      * direction is computed. Both directions of the mapping belong to this one type: scattering
-     * them across `ExecutionTimeline`, `AnimationStrategy` and the handle is how the two halves
+     * them across `ExecutionTimeline`, `MotionSampler` and the handle is how the two halves
      * of an inverse pair drift apart without anyone noticing.
      *
      * ## Positions are per iteration
@@ -96,6 +112,10 @@ data class TimedSpec(
         }
         return timeline.delayNanos + (timeline.durationNanos * p.toDouble()).toLong()
     }
+
+    /** A timeline ends when it runs out. An infinite one never does. */
+    override fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean =
+        timeline.isFinishedAt(elapsedNanos)
 }
 
 /**
@@ -108,10 +128,10 @@ data class TimedSpec(
  * ## Everything here is in normalised progress, not value units
  *
  * A solver built from this spec integrates progress from 0 toward 1 and reports it as
- * [AnimationStrategy.easedProgress]; `Animation.valueAt` then maps that into value space. That is
- * what lets a strategy be constructed from the spec alone, with no knowledge of the animation's
+ * [MotionSample.value]; `Animation.valueAt` then maps that into value space. That is
+ * what lets a sampler be constructed from the spec alone, with no knowledge of the animation's
  * `from` and `to` — and that in turn is what keeps Sprint 06B additive, since the engine's
- * `strategyFor(spec)` never has to grow a second parameter.
+ * `samplerFor(spec)` never has to grow a second parameter.
  *
  * Working in normalised space costs a spring nothing. Substituting `x = from + (to - from) * p`
  * into `x'' = -k(x - target) - c * x'` leaves `p'' = -k(p - 1) - c * p'`: the `(to - from)` factor
@@ -141,6 +161,17 @@ sealed interface PhysicsSpec : AnimationSpec {
 
     /** Within this distance, in progress, the motion counts as arrived. */
     val restDelta: Float
+
+    /**
+     * At rest when it is close enough to its target and slow enough.
+     *
+     * The target is 1 because everything on a `PhysicsSpec` is normalised progress, not value
+     * units — see ADR-002. `SpringSpec` and `SnapSpec` both use this; `DecaySpec` overrides it,
+     * because a decay has no target to be near.
+     */
+    override fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean =
+        kotlin.math.abs(1f - sample.value) < restDelta &&
+            kotlin.math.abs(sample.velocity) < restVelocity
 }
 
 /**
@@ -183,6 +214,10 @@ data class DecaySpec(
             "restDelta must be positive; $restDelta would never report the motion arrived"
         }
     }
+
+    /** A decay has nowhere to arrive. It ends when it stops moving. */
+    override fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean =
+        kotlin.math.abs(sample.velocity) < restVelocity
 }
 
 /** Motion settling onto the nearest of several resting positions. */

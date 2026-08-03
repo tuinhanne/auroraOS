@@ -275,6 +275,51 @@ class AnimationApiTest {
     }
 
     @Test
+    fun aTimedSpecFinishesWhenItsTimelineRunsOut() {
+        // And not because of the value: a timeline ends because time ran out, which is why the
+        // sample it is handed here is deliberately nowhere near an end state.
+        val spec = TimedSpec(Timeline.ofMillis(200))
+        val midFlight = MotionSample(value = 0.5f, velocity = 5f)
+        assertFalse(spec.isFinished(199 * ms, midFlight))
+        assertTrue(spec.isFinished(200 * ms, midFlight))
+    }
+
+    @Test
+    fun anInfiniteTimedSpecNeverFinishes() {
+        val spec = TimedSpec(
+            Timeline(durationNanos = 100 * ms, repeatCount = Timeline.REPEAT_INFINITE)
+        )
+        assertFalse(spec.isFinished(10_000 * ms, MotionSample(1f, 0f)))
+    }
+
+    @Test
+    fun aSpringFinishesWhenItIsNearOneAndSlow() {
+        // Near one, not near zero: everything on a PhysicsSpec is normalised progress, so the
+        // target is always 1 whatever the animation's from and to happen to be.
+        val spec = SpringSpec()
+        assertTrue(spec.isFinished(0L, MotionSample(value = 1f, velocity = 0f)))
+        assertFalse("still moving", spec.isFinished(0L, MotionSample(1f, velocity = 1f)))
+        assertFalse("still far away", spec.isFinished(0L, MotionSample(value = 0.5f, velocity = 0f)))
+        assertFalse("overshooting", spec.isFinished(0L, MotionSample(value = 1.2f, velocity = 0f)))
+    }
+
+    @Test
+    fun aDecayFinishesOnVelocityAloneBecauseItHasNoTarget() {
+        // The distinguishing case: a value nowhere near 1, which would keep a spring running,
+        // finishes a decay as long as it has stopped moving.
+        val spec = DecaySpec()
+        assertTrue(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 0f)))
+        assertFalse(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 1f)))
+    }
+
+    @Test
+    fun aSnapUsesTheSameRestRuleAsASpring() {
+        val spec = SnapSpec(targets = listOf(0f, 1f))
+        assertTrue(spec.isFinished(0L, MotionSample(1f, 0f)))
+        assertFalse(spec.isFinished(0L, MotionSample(0.5f, 0f)))
+    }
+
+    @Test
     fun physicsSpecsAreAnimationSpecs() {
         val spec: AnimationSpec = SpringSpec()
         assertTrue(spec is PhysicsSpec)
@@ -384,71 +429,20 @@ class AnimationApiTest {
         assertEquals(1f, a.to, 0f)
     }
 
-    // --- AnimationStrategy ---------------------------------------------------
+    // --- MotionSampler ---------------------------------------------------
 
-    /** A strategy with no physics, proving the interface is implementable as declared. */
-    private class HalfWayStrategy : AnimationStrategy {
-        override var progress: Float = 0f
-            private set
-        override var easedProgress: Float = 0f
-            private set
-        override var isFinished: Boolean = false
-            private set
-
-        override fun advance(elapsedNanos: Long, deltaNanos: Long) {
-            progress = 0.5f
-            easedProgress = 0.5f
-            isFinished = elapsedNanos > 0L
-        }
-
-        override fun reset() {
-            progress = 0f
-            easedProgress = 0f
-            isFinished = false
-        }
-
-        override fun seekTo(progress: Float) = Unit
+    /** A sampler with no physics, proving the interface is implementable as declared. */
+    private class HalfWaySampler : MotionSampler {
+        override fun sampleAt(elapsedNanos: Long) = MotionSample(value = 0.5f, velocity = 0f)
     }
 
     @Test
-    fun aStrategyReportsBothRawAndShapedProgress() {
-        // Two values, not one. The engine reads easedProgress for the value and progress for
-        // diagnostics; conflating them is the contradiction this design was corrected for.
-        val s = HalfWayStrategy()
-        s.advance(elapsedNanos = 10L, deltaNanos = 10L)
-        assertEquals(0.5f, s.progress, 0f)
-        assertEquals(0.5f, s.easedProgress, 0f)
-        assertTrue(s.isFinished)
-    }
-
-    @Test
-    fun resetReturnsAStrategyToItsStartingState() {
-        val s = HalfWayStrategy()
-        s.advance(10L, 10L)
-        s.reset()
-        assertEquals(0f, s.progress, 0f)
-        assertFalse(s.isFinished)
-    }
-
-    @Test
-    fun aStrategyMayRejectSeeking() {
-        // Optional operation, by design and not by omission: a spring position comes from
-        // integrating its previous state, so there is no elapsed time to jump to.
-        val physics = object : AnimationStrategy {
-            override val progress = 0f
-            override val easedProgress = 0f
-            override val isFinished = false
-            override fun advance(elapsedNanos: Long, deltaNanos: Long) = Unit
-            override fun reset() = Unit
-            override fun seekTo(progress: Float): Unit =
-                throw UnsupportedOperationException("a spring cannot be seeked")
-        }
-        try {
-            physics.seekTo(0.5f)
-            fail("a physics strategy must be allowed to reject seeking")
-        } catch (expected: UnsupportedOperationException) {
-            // expected
-        }
+    fun aSamplerAnswersOneQuestion() {
+        val s = HalfWaySampler()
+        assertEquals(0.5f, s.sampleAt(10L).value, 0f)
+        assertEquals(0f, s.sampleAt(10L).velocity, 0f)
+        assertEquals("a sampler holds nothing, so the same elapsed always answers the same",
+            s.sampleAt(10L), s.sampleAt(10L))
     }
 
     // --- RULE-011 and RULE-014: FrameTime is an immutable value ---------------
@@ -499,14 +493,17 @@ class AnimationApiTest {
         override var state: AnimationState,
     ) : AnimationHandle {
         override val executionId = 1L
-        override val progress = 0f
+        override val elapsedNanos = 0L
         override val value = 0f
+        override val velocity = 0f
+        override val hasNormalizedPosition = true
+        override val normalizedPosition = 0f
         override fun play() = Unit
         override fun pause() = Unit
         override fun resume() = Unit
         override fun cancel() = Unit
         override fun restart() = Unit
-        override fun seek(progress: Float) = Unit
+        override fun seekToElapsed(nanos: Long) = Unit
         override fun addListener(listener: AnimationListener): Disposable =
             object : Disposable {
                 override val isDisposed = false
@@ -541,7 +538,7 @@ class AnimationApiTest {
         val silent = object : AnimationListener {}
         val h = stub(AnimationState.RUNNING)
         silent.onStateChanged(h, 1L, AnimationState.SCHEDULED, AnimationState.RUNNING)
-        silent.onUpdate(h, 1L, 0.5f, 0.5f)
+        silent.onUpdate(h, 1L, 500 * ms, 0.5f)
     }
 
     @Test
@@ -551,7 +548,7 @@ class AnimationApiTest {
             override fun onUpdate(
                 handle: AnimationHandle,
                 executionId: Long,
-                progress: Float,
+                elapsedNanos: Long,
                 value: Float,
             ) {
                 updates++
@@ -559,7 +556,7 @@ class AnimationApiTest {
         }
         val h = stub(AnimationState.RUNNING)
         listener.onStateChanged(h, 1L, AnimationState.SCHEDULED, AnimationState.RUNNING)
-        listener.onUpdate(h, 1L, 0.5f, 0.5f)
+        listener.onUpdate(h, 1L, 500 * ms, 0.5f)
         assertEquals(1, updates)
     }
 }

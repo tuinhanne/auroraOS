@@ -58,13 +58,13 @@ interface AnimationListener {
     /**
      * The animation advanced.
      *
-     * @param progress unshaped, 0..1
-     * @param value the animated value: `handle.animation.valueAt(easedProgress)`
+     * @param elapsedNanos time since this execution began
+     * @param value the animated value: `handle.animation.valueAt(sample.value)`
      */
     fun onUpdate(
         handle: AnimationHandle,
         executionId: Long,
-        progress: Float,
+        elapsedNanos: Long,
         value: Float,
     ) {
     }

@@ -23,26 +23,26 @@ import aurora.sdk.event.Disposable
  *
  * ## Three rules cover the whole surface
  *
- * 1. **Queries never throw.** [state], [isRunning], [progress], [value], [executionId] and
- *    [animation] are readable in every state including [AnimationState.DISPOSED]. They read
- *    volatile fields, take no lock and trigger no lazy computation, so reading one from a
- *    listener during a frame costs nothing.
+ * 1. **Queries never throw.** [state], [isRunning], [elapsedNanos], [value], [velocity],
+ *    [normalizedPosition], [hasNormalizedPosition], [executionId] and [animation] are readable
+ *    in every state including [AnimationState.DISPOSED]. They read volatile fields, take no lock
+ *    and trigger no lazy computation.
  * 2. **Repeating a call that has already taken effect is not an error.** [dispose] on a disposed
  *    handle, [cancel] on a resting one and [pause] on a paused one all do nothing rather than
  *    throwing. Teardown paths run more than once far more often than anyone expects, and a
  *    throwing second call turns a harmless duplicate into a crash. This is the same reasoning
  *    [Disposable] already records.
- * 3. **[play], [pause], [resume], [restart] and [seek] throw [IllegalStateException]** when the
- *    current state does not permit them (RULE-003). [cancel] throws only on a disposed handle.
- *    After [dispose], everything throws except the queries and [dispose] itself.
+ * 3. **[play], [pause], [resume], [restart] and [seekToElapsed] throw [IllegalStateException]**
+ *    when the current state does not permit them (RULE-003). [cancel] throws only on a disposed
+ *    handle. After [dispose], everything throws except the queries and [dispose] itself.
  *
  * Rule 2 applies only while the handle is alive: `dispose(); cancel()` throws, because the
  * handle is gone, not because cancelling twice is wrong.
  *
  * ## Threading
  *
- * Not thread safe. Every mutating call — [play], [pause], [resume], [cancel], [restart], [seek],
- * [dispose], [addListener] — must happen on the same thread that drives
+ * Not thread safe. Every mutating call — [play], [pause], [resume], [cancel], [restart],
+ * [seekToElapsed], [dispose], [addListener] — must happen on the same thread that drives
  * `AnimationController.tick`, which on device is the frame thread. The queries are volatile
  * reads and are safe from anywhere.
  *
@@ -75,11 +75,40 @@ interface AnimationHandle : Disposable {
      */
     val executionId: Long
 
-    /** Unshaped progress of the current execution, 0..1. */
-    val progress: Float
+    /**
+     * Time since this execution began.
+     *
+     * The engine's canonical quantity. Every calculation inside the engine — in the handle, in a
+     * sampler, in `ExecutionTimeline` — is expressed in elapsed nanoseconds.
+     */
+    val elapsedNanos: Long
 
-    /** The animated value: `animation.valueAt(easedProgress)`. */
+    /** The animated value: `animation.valueAt(sample.value)`. */
     val value: Float
+
+    /** Rate of change of [value], in value units per second. */
+    val velocity: Float
+
+    /**
+     * Whether [normalizedPosition] means anything for this animation.
+     *
+     * True for a timed animation, false for one whose position oscillates.
+     */
+    val hasNormalizedPosition: Boolean
+
+    /**
+     * How far through the animation is, 0..1, or `NaN` when [hasNormalizedPosition] is false.
+     *
+     * **A convenience for callers. Nothing inside the engine may read it.** A scrollbar, a slider
+     * or a scrubber wants a number to draw with; without this, such a caller would compute
+     * `elapsedNanos / duration`, which is right for a `TimedSpec` and wrong for a `PhysicsSpec`,
+     * so the caller would have to know which it holds and the abstraction would have leaked.
+     *
+     * `NaN` rather than an exception, because queries never throw — see the rules above. And
+     * `NaN` rather than zero, because it propagates visibly instead of impersonating a real
+     * position.
+     */
+    val normalizedPosition: Float
 
     /**
      * Whether this animation is mid-execution.
@@ -131,16 +160,18 @@ interface AnimationHandle : Disposable {
     fun restart()
 
     /**
-     * Moves the current execution to [progress].
+     * Moves the current execution to [nanos] since it began.
      *
      * Legal from [AnimationState.SCHEDULED], [AnimationState.RUNNING] and
-     * [AnimationState.PAUSED] only: seeking positions a live execution, and a finished one has
-     * no position to move. Scrubbing a finished animation is `restart(); pause(); seek(p)`.
+     * [AnimationState.PAUSED] only: seeking positions a live execution, and a finished one has no
+     * position to move.
      *
-     * Throws `UnsupportedOperationException` when the animation spec is a [PhysicsSpec]; see
-     * [AnimationStrategy.seekTo].
+     * In elapsed time rather than in progress, because progress has no inverse for an animation
+     * that overshoots — a spring reaches 0.9 at three different times, so `seek(0.9f)` has no
+     * single answer. Elapsed always does. A caller thinking in fractions converts with
+     * `TimedSpec.elapsedForProgress`.
      */
-    fun seek(progress: Float)
+    fun seekToElapsed(nanos: Long)
 
     /**
      * Observes this handle.

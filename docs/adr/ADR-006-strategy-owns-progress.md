@@ -2,6 +2,11 @@
 
 **Status:** accepted · 2026-08-02 · Sprint 06A
 
+> **Amended by Sprint 06A.5.** `AnimationStrategy` is now `MotionSampler` and it returns a
+> `MotionSample` rather than exposing `progress` and `easedProgress`. The split this ADR
+> describes — `ExecutionTimeline` owns elapsed time, the sampler owns motion — is unchanged and
+> is what 06A.5 makes clearer. Read `progress` below as `MotionSample.value`.
+
 ## Context
 
 The sprint brief named a single class `TimelineRunner` and gave it the whole job: take a

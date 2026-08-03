@@ -52,7 +52,7 @@ enum class AnimationEvent {
     /** A caller began a new execution. */
     RESTART,
 
-    /** The strategy reported that the motion ended. */
+    /** The spec's completion rule reported that the motion ended. */
     FINISH,
 
     /** A caller finished with the handle for good. */

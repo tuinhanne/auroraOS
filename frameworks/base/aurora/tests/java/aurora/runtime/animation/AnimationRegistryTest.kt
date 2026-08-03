@@ -326,12 +326,12 @@ class AnimationRegistryTest {
         val h = c.animator.play(Animation("a", TimedSpec(Timeline.ofMillis(1000))))
         c.tick(frame(0))
         c.tick(frame(1))
-        val whereItWas = h.progress
+        val whereItWas = h.normalizedPosition
 
         c.stop()
         assertFalse(c.isRunning)
         assertEquals(AnimationState.RUNNING, h.state)
-        assertEquals(whereItWas, h.progress, 0f)
+        assertEquals(whereItWas, h.normalizedPosition, 0f)
     }
 
     @Test
@@ -368,13 +368,13 @@ class AnimationRegistryTest {
         c.tick(frame(2))
         c.tick(frame(3))
 
-        val beforeA = a.progress
-        val beforeB = b.progress
-        val beforeD = d.progress
+        val beforeA = a.normalizedPosition
+        val beforeB = b.normalizedPosition
+        val beforeD = d.normalizedPosition
         c.tick(frame(4))
 
-        assertEquals(a.progress - beforeA, b.progress - beforeB, 1e-6f)
-        assertEquals(a.progress - beforeA, d.progress - beforeD, 1e-6f)
+        assertEquals(a.normalizedPosition - beforeA, b.normalizedPosition - beforeB, 1e-6f)
+        assertEquals(a.normalizedPosition - beforeA, d.normalizedPosition - beforeD, 1e-6f)
     }
 
     // --- AnimationDriver ------------------------------------------------------
@@ -471,7 +471,7 @@ class AnimationRegistryTest {
                 override fun onUpdate(
                     handle: aurora.sdk.animation.AnimationHandle,
                     executionId: Long,
-                    progress: Float,
+                    elapsedNanos: Long,
                     value: Float,
                 ) {
                     counts[i]++

@@ -21,7 +21,8 @@ import aurora.sdk.animation.AnimationHandle
 import aurora.sdk.animation.AnimationListener
 import aurora.sdk.animation.AnimationSpec
 import aurora.sdk.animation.AnimationState
-import aurora.sdk.animation.AnimationStrategy
+import aurora.sdk.animation.MotionSample
+import aurora.sdk.animation.MotionSampler
 import aurora.sdk.animation.PhysicsSpec
 import aurora.sdk.animation.TimedSpec
 import aurora.sdk.event.Disposable
@@ -31,7 +32,7 @@ import aurora.sdk.time.FrameTime
  * One animation, bound to the engine.
  *
  * Holds four things and coordinates them: the pure [AnimationStateMachine], an
- * [ExecutionTimeline] for elapsed time, an [AnimationStrategy] for progress, and the listener
+ * [ExecutionTimeline] for elapsed time, a [MotionSampler] for position, and the listener
  * list. Nothing here decides *what* is legal or *how far through* anything is; both of those
  * questions belong to objects that can be tested without a handle.
  *
@@ -43,7 +44,7 @@ class AnimationHandleImpl(
     private val registry: AnimationRegistry,
 ) : AnimationHandle, AnimationRegistry.Tickable {
 
-    private val strategy: AnimationStrategy = strategyFor(animation.spec)
+    private var sampler: MotionSampler = samplerFor(animation.spec)
     private val execution = ExecutionTimeline()
 
     @Volatile
@@ -55,12 +56,23 @@ class AnimationHandleImpl(
         private set
 
     @Volatile
-    override var progress: Float = 0f
+    override var elapsedNanos: Long = 0L
         private set
 
     @Volatile
-    override var value: Float = animation.valueAt(strategy.easedProgress)
+    override var value: Float = animation.valueAt(samplerFor(animation.spec).sampleAt(0L).value)
         private set
+
+    @Volatile
+    override var velocity: Float = 0f
+        private set
+
+    @Volatile
+    override var normalizedPosition: Float = Float.NaN
+        private set
+
+    override val hasNormalizedPosition: Boolean
+        get() = animation.spec is TimedSpec
 
     /** Which state a pause came from, so resuming returns there. */
     private var pausedFrom: AnimationState = AnimationState.RUNNING
@@ -100,28 +112,17 @@ class AnimationHandleImpl(
 
     override fun dispose() = dispatch(AnimationEvent.DISPOSE)
 
-    override fun seek(progress: Float) {
+    override fun seekToElapsed(nanos: Long) {
         check(state == AnimationState.SCHEDULED ||
               state == AnimationState.RUNNING ||
               state == AnimationState.PAUSED) {
-            "seek is not legal in state $state: seeking positions a live execution, and a " +
-                "finished one has no position to move. Use restart() first."
+            "seekToElapsed is not legal in state $state: seeking positions a live execution, and " +
+                "a finished one has no position to move. Use restart() first."
         }
-        require(progress in 0f..1f) { "progress must be 0..1, was $progress" }
+        require(nanos >= 0) { "cannot seek before the execution began: $nanos" }
 
-        val spec = animation.spec
-        if (spec !is TimedSpec) {
-            throw UnsupportedOperationException(
-                "seeking is defined only for a TimedSpec; ${spec.javaClass.simpleName} has no " +
-                    "elapsed time to jump to"
-            )
-        }
-
-        val targetNanos = spec.elapsedForProgress(progress)
-        execution.seekTo(targetNanos)
-        strategy.seekTo(progress)
-        strategy.advance(targetNanos, 0L)
-        publishUpdate()
+        execution.seekTo(nanos)
+        publishUpdate(sampler.sampleAt(nanos), nanos)
     }
 
     override fun addListener(listener: AnimationListener): Disposable {
@@ -140,10 +141,10 @@ class AnimationHandleImpl(
         if (state == AnimationState.SCHEDULED) dispatch(AnimationEvent.TICK)
 
         val elapsed = execution.advanceTo(frameTime.frameTimeNanos)
-        strategy.advance(elapsed, frameTime.deltaNanos)
-        publishUpdate()
+        val sample = sampler.sampleAt(elapsed)
+        publishUpdate(sample, elapsed)
 
-        if (strategy.isFinished) dispatch(AnimationEvent.FINISH)
+        if (animation.spec.isFinished(elapsed, sample)) dispatch(AnimationEvent.FINISH)
     }
 
     // --- the one place state changes -----------------------------------------
@@ -164,11 +165,16 @@ class AnimationHandleImpl(
 
             AnimationEvent.RESTART -> {
                 executionId++
-                strategy.reset()
+                // A fresh sampler rather than a reset one. A stepped sampler's internal state is
+                // its own business, and there is nothing for the engine to remember to clear.
+                sampler = samplerFor(animation.spec)
                 execution.reset()
                 pausedFrom = AnimationState.RUNNING
-                progress = 0f
-                value = animation.valueAt(strategy.easedProgress)
+                elapsedNanos = 0L
+                val fresh = sampler.sampleAt(0L)
+                value = animation.valueAt(fresh.value)
+                velocity = 0f
+                normalizedPosition = if (hasNormalizedPosition) fresh.value else Float.NaN
                 enterRegistry()
             }
 
@@ -210,22 +216,24 @@ class AnimationHandleImpl(
 
     // --- notification --------------------------------------------------------
 
-    private fun publishUpdate() {
-        // Everything a listener is handed is captured before the loop, not read from the fields
-        // inside it. A listener may restart or seek this very handle from its callback, which
-        // rewrites progress, value and executionId - and a later listener in the same dispatch
-        // would then be handed one execution's id with another execution's numbers. That triple
-        // would describe no real moment of any real run, which is precisely the ambiguity
-        // executionId exists to prevent (RULE-012).
-        val p = strategy.progress
-        val v = animation.valueAt(strategy.easedProgress)
-        progress = p
+    private fun publishUpdate(sample: MotionSample, elapsed: Long) {
+        // Everything a listener is handed is captured before the loop, never read from the
+        // fields inside it. A listener may restart or seek this very handle from its callback,
+        // which rewrites these fields and the executionId - and a later listener in the same
+        // dispatch would then be handed one execution's id beside another execution's numbers.
+        val v = animation.valueAt(sample.value)
+        val range = animation.to - animation.from
+        elapsedNanos = elapsed
         value = v
+        velocity = sample.velocity * range
+        normalizedPosition =
+            if (hasNormalizedPosition) sample.value else Float.NaN
+
         val snapshot = listeners
         val id = executionId
         var i = 0
         while (i < snapshot.size) {
-            snapshot[i].onUpdate(this, id, p, v)
+            snapshot[i].onUpdate(this, id, elapsed, v)
             i++
         }
     }
@@ -264,11 +272,11 @@ class AnimationHandleImpl(
 
     private companion object {
 
-        fun strategyFor(spec: AnimationSpec): AnimationStrategy = when (spec) {
-            is TimedSpec -> TimedStrategy(spec)
+        fun samplerFor(spec: AnimationSpec): MotionSampler = when (spec) {
+            is TimedSpec -> TimedSampler(spec)
             is PhysicsSpec -> throw UnsupportedOperationException(
                 "physics animations arrive in Sprint 06B; ${spec.javaClass.simpleName} has no " +
-                    "solver yet"
+                    "sampler yet"
             )
         }
     }

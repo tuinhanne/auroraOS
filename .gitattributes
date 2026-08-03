@@ -1,0 +1,4 @@
+# Shell scripts run on the Linux build VM. A CRLF ending makes bash read "set -o pipefail"
+# as an option name and fail on the first line, while Git Bash on Windows tolerates it - so the
+# breakage only appears on the machine that matters. Force LF regardless of core.autocrlf.
+*.sh text eol=lf

@@ -20,7 +20,7 @@ package aurora.runtime.animation
  * The time base of one execution.
  *
  * Answers exactly one question -- *how long has this execution been running?* -- and leaves
- * *how far through is it* to an `AnimationStrategy`. That split is ADR-006, and it is what
+ * *how far through is it* to a `MotionSampler`. That split is ADR-006, and it is what
  * lets Sprint 06B add spring and decay solvers without opening this file.
  *
  * ## No clock, anywhere
