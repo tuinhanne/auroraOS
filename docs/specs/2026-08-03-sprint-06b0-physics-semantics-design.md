@@ -66,8 +66,19 @@ An underdamped spring is `p(t) = 1 - A·e^(-ζωt)·cos(ω_d·t + φ)`. At every
 precisely why the conjunction exists. But once the envelope has dropped below `restDelta`, the
 rule reports **finished** at that turning point; a moment later the motion sweeps through its
 target with `|velocity| ≈ amplitude·ω_d`, and the rule reports **not finished** again. With
-`restDelta = 0.001` and `restVelocity = 0.01` that flip needs only `ω_d > 10 rad/s`, and
-`SPRING_GENTLE` sits around 14–20.
+`restDelta = 0.001` and `restVelocity = 0.01` that flip needs `ω_d > 10 rad/s`.
+
+Against the shipped tokens, where `ω_d = √stiffness · √(1 - ζ²)`:
+
+| token | stiffness | ζ | ω_d | flips? |
+|---|---|---|---|---|
+| `SPRING_BOUNCY` | 500 | 0.60 | 17.9 | yes, comfortably |
+| `SPRING_GENTLE` | 400 | 0.85 | 10.5 | yes, marginally |
+| `SPRING_SNAPPY` | 800 | 1.00 | — | no: critically damped, no turning points |
+
+So the defect is real for two of the three and absent for the third, and `SPRING_GENTLE` sits
+close enough to the boundary that a token tweak could hide or expose it. That is its own argument
+against a rule whose correctness depends on where a design token happens to land.
 
 The engine does not break, because it stops at the first frame that reports true and never asks
 again. The consequence is subtler and worse: **the instant a spring finishes depends on which
