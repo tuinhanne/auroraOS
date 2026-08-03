@@ -196,19 +196,18 @@ class AnimationApiTest {
     }
 
     @Test
-    fun everyPhysicsSpecCarriesVelocityAndRestThresholds() {
-        // The three fields are what a solver needs and a Timeline cannot express. Declared
+    fun everyPhysicsSpecCarriesVelocityAndACompletionThreshold() {
+        // Two fields are what a solver needs and a Timeline cannot express. Declared
         // now so that 06B adds solvers without changing this file.
         val specs: List<PhysicsSpec> = listOf(
             SpringSpec(),
-            DecaySpec(),
+            DecaySpec(initialVelocity = 2f),
             SnapSpec(targets = listOf(0f, 1f)),
         )
         // javaClass.simpleName, not ::class.simpleName: KClass pulls in Kotlin reflection,
         // which is not on the core_current classpath.
         specs.forEach {
-            assertTrue("${it.javaClass.simpleName} restVelocity", it.restVelocity > 0f)
-            assertTrue("${it.javaClass.simpleName} restDelta", it.restDelta > 0f)
+            assertTrue("${it.javaClass.simpleName}", it.completionThreshold > 0f)
         }
     }
 
@@ -234,7 +233,7 @@ class AnimationApiTest {
     @Test
     fun aDecayWithoutFrictionIsRejected() {
         try {
-            DecaySpec(friction = 0f)
+            DecaySpec(friction = 0f, initialVelocity = 2f)
             fail("frictionless decay never settles")
         } catch (expected: IllegalArgumentException) {
             // expected
@@ -242,14 +241,13 @@ class AnimationApiTest {
     }
 
     @Test
-    fun aPhysicsSpecWithoutRestThresholdsIsRejected() {
+    fun aPhysicsSpecWithoutACompletionThresholdIsRejected() {
         // A solver with a zero threshold never reports settling, so the animation runs forever.
         // As fatal as frictionless decay, and rejected as loudly.
         listOf<Pair<String, () -> PhysicsSpec>>(
-            "spring restVelocity" to { SpringSpec(restVelocity = 0f) },
-            "spring restDelta" to { SpringSpec(restDelta = 0f) },
-            "decay restVelocity" to { DecaySpec(restVelocity = -1f) },
-            "snap restDelta" to { SnapSpec(targets = listOf(0f), restDelta = 0f) },
+            "spring" to { SpringSpec(completionThreshold = 0f) },
+            "decay" to { DecaySpec(initialVelocity = 2f, completionThreshold = -1f) },
+            "snap" to { SnapSpec(targets = listOf(0f), completionThreshold = 0f) },
         ).forEach { (name, construct) ->
             try {
                 construct()
@@ -262,16 +260,15 @@ class AnimationApiTest {
 
     @Test
     fun physicsThresholdsAreNormalisedSoTheDefaultsAreSaneAtAnyScale() {
-        // The defaults are only meaningful in normalised progress. If they were value units,
-        // restDelta = 0.001f would mean a thousandth of a pixel on a full-screen slide, which no
-        // solver would ever reach, and the animation would never report settling.
+        // The default is only meaningful in normalised progress. If it were value units,
+        // 0.001f would mean a thousandth of a pixel on a full-screen slide, which no solver
+        // would ever reach, and the animation would never report settling.
         //
         // This test cannot check units - nothing can - so it checks the consequence: the
-        // thresholds are small fractions of the unit interval, which is the only reading under
-        // which they work for both an alpha fade over 0..1 and a 1000px slide.
+        // threshold is a small fraction of the unit interval, which is the only reading under
+        // which it works for both an alpha fade over 0..1 and a 1000px slide.
         val spec = SpringSpec()
-        assertTrue("restDelta must be a fraction of the unit interval", spec.restDelta < 0.01f)
-        assertTrue("restVelocity must be a fraction of the unit interval", spec.restVelocity < 0.1f)
+        assertTrue("must be a fraction of the unit interval", spec.completionThreshold < 0.01f)
     }
 
     @Test
@@ -304,12 +301,17 @@ class AnimationApiTest {
     }
 
     @Test
-    fun aDecayFinishesOnVelocityAloneBecauseItHasNoTarget() {
-        // The distinguishing case: a value nowhere near 1, which would keep a spring running,
-        // finishes a decay as long as it has stopped moving.
-        val spec = DecaySpec()
-        assertTrue(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 0f)))
-        assertFalse(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 1f)))
+    fun aDecayFinishesAtItsTargetLikeEveryOtherFamily() {
+        // This test used to assert the opposite, and its name said why: a decay was thought to
+        // have no target, so it finished on velocity alone and a value of 0.3 counted as
+        // arrived. Sprint 06B.0 refuted the premise - a decay's target is derived rather than
+        // absent, at from + v0/friction - so it is measured against 1 like everything else.
+        //
+        // The expected values changed because the quantity changed meaning, which the 06A.5
+        // migration rule calls a finding rather than a rename. See ADR-008.
+        val spec = DecaySpec(initialVelocity = 2f)
+        assertTrue(spec.isFinished(0L, MotionSample(value = 1f, velocity = 0f)))
+        assertFalse(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 0f)))
     }
 
     @Test
@@ -317,6 +319,52 @@ class AnimationApiTest {
         val spec = SnapSpec(targets = listOf(0f, 1f))
         assertTrue(spec.isFinished(0L, MotionSample(1f, 0f)))
         assertFalse(spec.isFinished(0L, MotionSample(0.5f, 0f)))
+    }
+
+    @Test
+    fun aDecaysNormalisedInitialVelocityIsAlwaysItsFriction() {
+        // The two halves of a decay have to agree at t = 0 or it stops somewhere other than
+        // `to`. The caller sets to = from + v0/f and normalises velocity by (to - from), giving
+        // v0/(v0/f) = f; the sampler's shape 1 - e^(-ft) has derivative f at zero. So a decay's
+        // normalised initial velocity carries no information beyond the friction - which is the
+        // same statement as `v0 cancels`, seen from the caller's side.
+        val spec = DecaySpec(friction = 4.6f, initialVelocity = 800f)
+        assertEquals(4.6f, 800f / spec.restingDisplacement(800f), 1e-3f)
+    }
+
+    @Test
+    fun aDecayTravelsFurtherWhenItIsThrownHarderAndLessWhenItDragsMore() {
+        // restingDisplacement is where the friction model lives for anyone building an
+        // Animation. Two directions, because a fling upward and a fling downward are the same
+        // physics and nothing may assume a positive velocity.
+        val spec = DecaySpec(friction = 2f, initialVelocity = 100f)
+        assertEquals(50f, spec.restingDisplacement(100f), 1e-3f)
+        assertEquals(-50f, spec.restingDisplacement(-100f), 1e-3f)
+        assertEquals(25f, DecaySpec(friction = 4f, initialVelocity = 100f)
+            .restingDisplacement(100f), 1e-3f)
+    }
+
+    @Test
+    fun aDecayReleasedAtRestIsRejected() {
+        // Not an edge case needing a rule: with v0 = 0 the travel v0/f is zero, so `to` equals
+        // `from` and there is no animation to run. It is a precondition, and it is the whole of
+        // what ADR-002 left open as "what happens when from == to".
+        try {
+            DecaySpec(initialVelocity = 0f)
+            fail("a decay with no initial velocity has nothing to animate")
+        } catch (expected: IllegalArgumentException) {
+            // expected
+        }
+    }
+
+    @Test
+    fun theDecayFrictionDefaultSettlesInAboutOneAndAHalfSeconds() {
+        // Derived, not chosen: a decay ends when e^(-ft) drops below the threshold, so the
+        // settle time is -ln(threshold)/f. The previous default of 0.5 gave 13.8 seconds for a
+        // fling to stop, which is the first thing ever measured about it.
+        val spec = DecaySpec(initialVelocity = 2f)
+        val settleSeconds = -kotlin.math.ln(spec.completionThreshold) / spec.friction
+        assertTrue("settles in $settleSeconds s", settleSeconds > 1.0f && settleSeconds < 2.0f)
     }
 
     @Test

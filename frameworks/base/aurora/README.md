@@ -284,6 +284,34 @@ reads the same instance, so one callback dirtying it would corrupt the whole fra
 is a data class of `val`s; `AnimationApiTest` asserts by reflection that every field is `final`,
 so the rule fails the day someone adds a `var`.
 
+**RULE-015 — A contract property must have a fixture that violates it.** One property, one
+deliberately wrong subject, and no orphans in either direction: no assertion without a fixture
+that can make it fail, and no fixture that nothing uses. A property never shown to go red has not
+been shown to check anything, and in a green run it reads exactly like one everything satisfies.
+`verify-sprint06b0.sh` gate 4 checks the pairing declared at the top of `ContractSelfTest`.
+
+**RULE-016 — A property must not reproduce the implementation it verifies.** Checking a central
+difference with a central difference at the same step compares a computation against itself and
+passes for every input. `SamplerContract` differentiates at the 10ms probe spacing precisely
+because `TimedSampler` differentiates at 0.5ms. **Enforced by review** — no script can be asked
+whether two computations are the same idea, and a gate pretending otherwise would be the false
+confidence this rule exists to prevent.
+
+**RULE-017 — A property may only be asserted of a subject inside the domain where its
+justification holds.** Sprint 06B.0 found this the expensive way. A spring's completion metric is
+never-increasing because `dE/dt = -2ζωv²`, which is a statement about *solutions of*
+`ẍ + 2ζωẋ + ω²x = 0`. A hand-built oscillation that merely looks damped is not a solution, so the
+metric is under no obligation to fall along it — and a red would leave three suspects with no way
+to tell them apart: the metric, the property, or the fixture.
+
+So a synthetic fixture must not pass for a solver, an analytic trajectory must say that it is
+one, and where no valid subject exists the honest move is to record the gap. The spring envelope
+has no trajectory subject until Sprint 06B.1, which `ReferenceTrajectories.kt` says in full
+rather than supplying a fixture that could not support the conclusion drawn from it.
+
+**Enforced by review**, for the same reason as RULE-016: whether a subject satisfies a theorem's
+premises is not a thing grep can decide.
+
 ### Time, in three tiers
 
 | Layer | Holds | Examples |

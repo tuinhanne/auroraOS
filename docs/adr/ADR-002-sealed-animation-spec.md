@@ -71,7 +71,33 @@ pure and `seek(0.5)` twice can return two different values. It breaks RULE-009 d
   time, which always has one. The decision this ADR records — a sealed spec with a timed and a
   physics branch — is unaffected.
 
-## Left open for Sprint 06B
+- **Amended by Sprint 06B.0.** Both questions below are now answered, and answering the first
+  required retracting the argument this ADR made for it. See ADR-008. The decision recorded
+  here — a sealed spec with a timed and a physics branch — is unaffected; what changed is the
+  physics branch's shape, which this ADR deliberately left for a sprint with a solver in view.
+
+  `PhysicsSpec` no longer carries `restVelocity` and `restDelta`. Completion is one scalar
+  (`completionMetric`) against one threshold (`completionThreshold`), and `isFinished` is a
+  comparison no spec overrides. The rule this ADR shipped could not stand: an underdamped spring
+  has zero velocity at every turning point, so it reported finished at a turning point and
+  not-finished a moment later, making the instant a spring settles depend on which frame landed
+  near one.
+
+  `DecaySpec.initialVelocity` also lost its default. A decay released at rest has zero travel, so
+  `to` equals `from` and there is nothing to animate — which is the whole of the second question
+  below, resolved as a precondition rather than as a special case.
+
+## Left open for Sprint 06B — **both answered, see ADR-008**
+
+> **The first question's premise below is wrong, and is left standing as written because the
+> mistake is the useful part.** It asserts that a decay's resting position cannot be an input
+> without circularity, on the unstated assumption that finding it requires simulating to it. It
+> does not: under exponential friction the total travel is `v₀/friction`, in closed form before
+> the first frame. A decay has a target after all — derived rather than supplied — and
+> `MotionSample.value` therefore keeps one meaning across every family.
+>
+> The second question resolves with it. The division by the range is undefined exactly when
+> `v₀ = 0`, which is a fling released at rest.
 
 Two questions this decision raises and does not answer. Both were found in review of Sprint 06A
 and are recorded here rather than in someone's memory, because they are cheap to answer now and

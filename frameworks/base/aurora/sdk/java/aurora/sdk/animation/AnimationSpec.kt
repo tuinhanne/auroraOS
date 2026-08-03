@@ -44,9 +44,11 @@ sealed interface AnimationSpec {
      * Whether a motion described by this spec has ended.
      *
      * The rule belongs here and not on the sampler for two reasons. It is made of this spec's
-     * own numbers — a spring rests inside its `restDelta` and below its `restVelocity` — so a
+     * own numbers and its own model — a spring measures its distance from rest as an oscillation
+     * envelope, which is derived from the model rather than from the method of solution — so a
      * sampler reporting it would be applying a rule it does not own, and every alternative
-     * spring solver would have to re-implement it identically. And a timed animation cannot
+     * spring solver, closed-form or stepped, would have to re-implement it identically. And a
+     * timed animation cannot
      * derive it from a value at all: a timeline ends because time ran out, not because the value
      * arrived anywhere, which is why this takes [elapsedNanos] as well as [sample].
      *
@@ -156,22 +158,50 @@ sealed interface PhysicsSpec : AnimationSpec {
      */
     val initialVelocity: Float
 
-    /** Below this speed, in progress per second, the motion counts as stopped. */
-    val restVelocity: Float
-
-    /** Within this distance, in progress, the motion counts as arrived. */
-    val restDelta: Float
+    /**
+     * How small [completionMetric] must get before the motion counts as over.
+     *
+     * In progress units, and comparable across families: 0.001 means the residual motion is under
+     * a thousandth of the animation's travel, whether that motion is a spring settling or a fling
+     * coasting. The two numbers this replaces were not comparable — nobody could say what
+     * `restVelocity = 0.01` implied without first being told the friction, and for a decay one of
+     * the two was always dead.
+     */
+    val completionThreshold: Float
 
     /**
-     * At rest when it is close enough to its target and slow enough.
+     * How far this motion still is from rest, in progress units.
      *
-     * The target is 1 because everything on a `PhysicsSpec` is normalised progress, not value
-     * units — see ADR-002. `SpringSpec` and `SnapSpec` both use this; `DecaySpec` overrides it,
-     * because a decay has no target to be near.
+     * **Must never increase while the sampler evolves.** The contract states observable
+     * behaviour, not a formula: an implementation may compute this from energy, from a decay
+     * envelope or from anything else, provided a later sample never reports more than an earlier
+     * one. Stating it as behaviour rather than as monotonicity is deliberate — a claim about the
+     * whole function would have to hold where the metric has fallen to 1e-9, and there float32
+     * rounds in both directions.
+     *
+     * ## Why the old rule could not stay
+     *
+     * It read displacement and velocity separately: `|1 - value| < restDelta && |velocity| <
+     * restVelocity`. An underdamped spring has zero velocity at **every turning point**, so once
+     * its envelope fell below `restDelta` the rule reported finished at a turning point and
+     * not-finished a moment later, as the motion swept back through its target. The engine
+     * survives that by stopping at the first frame reporting true and never asking again — but
+     * then the instant a spring settles depends on which frame happens to land near a turning
+     * point, and the same spring finishes at different times at 60Hz and at 120Hz.
+     *
+     * See ADR-008.
+     */
+    fun completionMetric(sample: MotionSample): Float
+
+    /**
+     * A comparison, and nothing else.
+     *
+     * No spec overrides this. `completionMetric` owns the physics and `completionThreshold` owns
+     * the UX; leaving a third thing for a family to redefine is how "finished" quietly came to
+     * mean two different things in the first place.
      */
     override fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean =
-        kotlin.math.abs(1f - sample.value) < restDelta &&
-            kotlin.math.abs(sample.velocity) < restVelocity
+        completionMetric(sample) < completionThreshold
 }
 
 /**
@@ -183,41 +213,109 @@ sealed interface PhysicsSpec : AnimationSpec {
 data class SpringSpec(
     val spring: Spring = MotionTokens.SPRING_GENTLE,
     override val initialVelocity: Float = 0f,
-    override val restVelocity: Float = 0.01f,
-    override val restDelta: Float = 0.001f,
+    override val completionThreshold: Float = 0.001f,
 ) : PhysicsSpec {
 
     init {
-        require(restVelocity > 0f) {
-            "restVelocity must be positive; $restVelocity would never report the motion stopped"
+        require(completionThreshold > 0f) {
+            "completionThreshold must be positive; $completionThreshold would never be reached"
         }
-        require(restDelta > 0f) {
-            "restDelta must be positive; $restDelta would never report the motion arrived"
-        }
+    }
+
+    /**
+     * The amplitude this oscillation would settle at if damping stopped now.
+     *
+     * With `x` the displacement still to cover and `v` the current speed, `√(x² + (v/ω)²)` is the
+     * conserved amplitude of the equivalent undamped oscillator. Damping only removes energy: for
+     * `E = ½(v² + ω²x²)`, substituting `ẋ = v` and `v̇ = -ω²x - 2ζωv` gives `dE/dt = -2ζωv²`,
+     * which is zero exactly at the turning points and negative everywhere else. So this never
+     * increases.
+     *
+     * That is what repairs the hole the old rule left. At a turning point `v = 0`, so this equals
+     * the true envelope rather than the instantaneous distance; between turning points the
+     * `(v/ω)²` term supplies what displacement alone stops accounting for.
+     *
+     * `v/ω` has units of `(progress/second) / (1/second)`, so the whole expression is in progress
+     * and shares one threshold with every other family.
+     */
+    override fun completionMetric(sample: MotionSample): Float {
+        val omega = kotlin.math.sqrt(spring.stiffness)
+        val x = 1f - sample.value
+        val scaledVelocity = sample.velocity / omega
+        return kotlin.math.sqrt(x * x + scaledVelocity * scaledVelocity)
     }
 }
 
 /** Motion coasting to a stop under friction. A fling with nothing to land on. */
 data class DecaySpec(
-    val friction: Float = 0.5f,
-    override val initialVelocity: Float = 0f,
-    override val restVelocity: Float = 0.01f,
-    override val restDelta: Float = 0.001f,
+    /**
+     * How quickly the motion sheds speed, in inverse seconds.
+     *
+     * Derived rather than chosen. A decay is over when `e^(-f·t)` falls below
+     * [completionThreshold], so the settle time is `-ln(threshold)/f`; at the default threshold
+     * of 0.001, `f = 4.6` puts a fling at about 1.5 seconds.
+     *
+     * The previous default of 0.5 works out to **13.8 seconds**. It had been documented as
+     * plausible rather than measured, and Sprint 06B.0 is the first sprint able to measure it,
+     * because until completion became a single scalar there was no closed form to solve.
+     */
+    val friction: Float = 4.6f,
+    override val initialVelocity: Float,
+    override val completionThreshold: Float = 0.001f,
 ) : PhysicsSpec {
 
     init {
         require(friction > 0f) { "friction must be positive; $friction would never settle" }
-        require(restVelocity > 0f) {
-            "restVelocity must be positive; $restVelocity would never report the motion stopped"
+        require(initialVelocity != 0f) {
+            "a decay released at rest travels nowhere; there is nothing to animate"
         }
-        require(restDelta > 0f) {
-            "restDelta must be positive; $restDelta would never report the motion arrived"
+        require(completionThreshold > 0f) {
+            "completionThreshold must be positive; $completionThreshold would never be reached"
         }
     }
 
-    /** A decay has nowhere to arrive. It ends when it stops moving. */
-    override fun isFinished(elapsedNanos: Long, sample: MotionSample): Boolean =
-        kotlin.math.abs(sample.velocity) < restVelocity
+    /**
+     * How far a decay released at [velocity] travels before stopping, in [velocity]'s own units.
+     *
+     * Under exponential friction the total travel is `v₀/f`, available in closed form before the
+     * first frame. That is what makes a decay's target derived rather than absent:
+     *
+     * ```
+     * to = from + restingDisplacement(v₀)
+     * ```
+     *
+     * ADR-002 called this reading circular — where a decay stops is an output of the physics, so
+     * it cannot also be an input. That rested on an unstated assumption: that finding the resting
+     * position means simulating to it. It does not; it is one division. See ADR-008.
+     *
+     * ## Why this lives here
+     *
+     * So the friction model has one implementation. A caller computing `v₀/friction` itself while
+     * a sampler computes `1 - e^(-ft)` would be two copies of one model, and if they drifted the
+     * animation would still run, still look smooth, and stop in the wrong place with nothing to
+     * report it. `PhysicsContract.assertConvergesToOne` is what turns "the two agree" from a
+     * comment into a check.
+     *
+     * Note what this does **not** do: it never reaches the sampler. Normalised against its own
+     * travel, a decay's position is `1 - e^(-f·t)` and `v₀` cancels out entirely — initial
+     * velocity decides how far a decay goes, not how it goes. So this is for whoever builds the
+     * `Animation`, and `samplerFor(spec)` keeps its single parameter.
+     */
+    fun restingDisplacement(velocity: Float): Float = velocity / friction
+
+    /**
+     * The fraction of its travel this decay has still to cover.
+     *
+     * Normalised against its own total travel, a decay's position is `1 - e^(-f·t)`, so this is
+     * `e^(-f·t)` — falling monotonically, with no oscillation to account for and so no envelope
+     * to reconstruct.
+     *
+     * The override this replaces read velocity alone, on the grounds that a decay has nowhere to
+     * arrive. It has: its resting point is derived rather than supplied, which is what Sprint
+     * 06B.0 settled. So a decay uses the same target-relative measure every other family does.
+     */
+    override fun completionMetric(sample: MotionSample): Float =
+        kotlin.math.abs(1f - sample.value)
 }
 
 /** Motion settling onto the nearest of several resting positions. */
@@ -225,17 +323,31 @@ data class SnapSpec(
     val targets: List<Float>,
     val spring: Spring = MotionTokens.SPRING_SNAPPY,
     override val initialVelocity: Float = 0f,
-    override val restVelocity: Float = 0.01f,
-    override val restDelta: Float = 0.001f,
+    override val completionThreshold: Float = 0.001f,
 ) : PhysicsSpec {
 
     init {
         require(targets.isNotEmpty()) { "a snap spec needs at least one target to snap to" }
-        require(restVelocity > 0f) {
-            "restVelocity must be positive; $restVelocity would never report the motion stopped"
+        require(completionThreshold > 0f) {
+            "completionThreshold must be positive; $completionThreshold would never be reached"
         }
-        require(restDelta > 0f) {
-            "restDelta must be positive; $restDelta would never report the motion arrived"
-        }
+    }
+
+    /**
+     * The same envelope a spring uses, because once a target is chosen a snap **is** a spring.
+     *
+     * Duplicated rather than shared. Extracting it would mean a base class or a helper that only
+     * two specs use and that would have to be widened the moment a third family measures rest
+     * differently — the abstraction-with-no-variation this sprint declined to build. If a fourth
+     * family arrives wanting the same formula, that is when it earns a home of its own.
+     *
+     * Whether snap needs a sampler at all is left to Sprint 06B.3, after the spring exists and
+     * how general it turned out can be seen.
+     */
+    override fun completionMetric(sample: MotionSample): Float {
+        val omega = kotlin.math.sqrt(spring.stiffness)
+        val x = 1f - sample.value
+        val scaledVelocity = sample.velocity / omega
+        return kotlin.math.sqrt(x * x + scaledVelocity * scaledVelocity)
     }
 }
