@@ -118,10 +118,16 @@ the screen as a view that silently stops drawing, with no exception anywhere to 
 
 ---
 
-## 7. What is **not** yet verified
+## 7. Verification backlog
 
-Sprint 06B.0 delivers this contract with no solver in existence, so two clauses have fixtures that
-prove they can fail but no production subject that proves they hold.
+Not a list of shortcomings. It is the set of clauses that have a fixture proving they *can* fail
+but no production subject proving they *hold* — propositions waiting for their first real
+subject to confirm or refute them. Narrowing this table is the first work of the sprint that
+adds a solver, and it comes before writing one: each row that moves from unverified to verified
+makes the contract stronger, and each row that has to be **changed** in the process means the
+contract learned something from its first implementation.
+
+Sprint 06B.0 delivers this contract with no solver in existence, so two clauses are here.
 
 | clause | violating fixture | trajectory subject |
 |---|---|---|
@@ -141,6 +147,36 @@ pin the properties the monotonicity argument needs in order to be about the righ
 are not a substitute for running it along a trajectory.
 
 **Sprint 06B.1 is the first real test of the spring envelope, not a regression check on it.**
+
+### 7.1 Order of investigation when a backlog clause first goes red
+
+Stated here, before any solver exists, because when it is written matters more than what it says.
+The same sentence added after a failure reads as a rescue of whatever implementation was in front
+of the author; written beforehand it favours nothing, because there is nothing yet to favour.
+
+> **If an implementation satisfies the sampler tier's independent invariants (§3, §5, §6) but
+> fails a physics-tier property (§2, §4), investigate the contract and its metric before changing
+> the implementation.** The implementation is internally consistent, and what is rejecting it is
+> the metric. Reverse the presumption only on independent evidence against the implementation.
+
+This states an **order of investigation**, not a verdict. The contract is not presumed right and
+the implementation is not presumed wrong; the sampler tier may simply be too weak to catch some
+class of error, and that possibility is exactly why the rule points at what to examine first
+rather than at what to conclude.
+
+**The rule holds only while the sampler tier is an independent oracle.** Its value is its
+independence, not its assertion count. The day one of its properties reads `completionMetric`,
+both tiers can share a wrong assumption, they will fail and pass together, and this rule silently
+becomes worthless — while still looking like it works. Nothing detects that automatically; it is
+a review obligation on anyone extending `SamplerContract`.
+
+The pressure this exists to resist is structural rather than personal. Whoever writes the first
+solver is also the only person positioned to notice the contract is wrong, and they have the
+opposite incentive: a green run means the sprint is finished. Deciding in advance what evidence
+counts is the defence. An instruction to stay open-minded is not.
+
+Demoting or amending a property in this situation is progress in the contract, not a failure of
+the implementation — the same move the README records as expected rather than exceptional.
 
 ---
 
