@@ -102,26 +102,36 @@ prevent, arriving through a door RULE-015 does not watch.
 
 RULE-016 forbids a property **reproducing the implementation** it verifies — a central difference
 checked by a central difference at the same step. Here the metric does not reproduce the
-trajectory; it consumes the trajectory's output. What they share is not code but a **modelling
-assumption**: the same `ω`, the same oscillator.
+trajectory; it consumes its output. What they share is a **derivation**: the expected behaviour
+and the subject fall out of the same piece of algebra.
+
+The distinction matters for how the rule ages. *Shared modelling assumption* would be too wide:
+`trajectory → energy decay` and `trajectory → phase continuity` rest on the same oscillator and
+are entirely independent derivations, and a rule that caught both would forbid most useful
+physics testing. What is disqualifying is narrower — that the expected outcome is
+**mathematically entailed** by the construction that produced the subject, so the property cannot
+come out any other way.
 
 Proposed amendment, for review rather than applied here, since RULE-016 shipped in Sprint 06B.0:
 
-> **RULE-016 (extended).** A property must not reproduce the implementation it verifies, nor rest
-> on the same modelling assumption as its subject. Where it must — a completion metric and its
-> trajectory both derived from one spring token — the property earns trust only from a subject
-> built to violate it, not from a green run.
+> **RULE-016 (extended).** A property must not reproduce the implementation it verifies, nor
+> derive its expected behaviour from the same mathematical construction that produced its
+> subject — unless it has first been validated against a subject built to violate it.
+
+The last clause is the escape hatch this sprint needs, and the reason Task 2 exists: a spring's
+metric and a spring's trajectory *must* share `ω`, so the entailment cannot be designed away. It
+can only be paid for, with a subject that breaks the entailment and makes the property speak.
 
 ### Task 2: property validation on the Spring family
 
 Not a negative test suite. Its subject is the **property**, not the spring. It ships at least:
 
-| deliberately wrong spring | should be caught by |
-|---|---|
-| envelope decays at `ω_d` where it should decay at `ω_n` | `assertMetricNeverIncreases` |
-| velocity returns position's derivative with `ζ` omitted | `assertVelocityMatchesDerivative` |
-| overdamped branch taken for `ζ < 1` | both tiers |
-| Taylor cutoff set absurdly wide | `assertVelocityMatchesDerivative` |
+| deliberately wrong spring | targets | expected red set |
+|---|---|---|
+| envelope decays at `ω_d` where it should decay at `ω_n` | the metric's monotonicity | physics tier only |
+| velocity omits `ζ` from the derivative | the derivative property | **both tiers** — see below |
+| overdamped branch taken for `ζ < 1` | branch selection | **both tiers** |
+| Taylor cutoff set absurdly wide | §2's numerical constant | sampler tier only |
 
 Each lives in the test tree beside the 06B.0 fixtures, each is declared in the RULE-015 pairing
 block, and each must be shown red **before** Task 3 runs the real spring. A property that has
@@ -129,6 +139,37 @@ never been red *on this family* has not been shown to check anything *for this f
 
 The last row is worth its own note: it is the only check on §2's Taylor cutoff, and it is what
 stops that constant from being widened later to make something else pass.
+
+### Orthogonality is required where it is achievable, and named where it is not
+
+A fixture that breaks three things at once proves only that *something* is wrong, which defeats
+the point of validating properties one at a time. So each wrong spring must **name the single
+assumption it targets** — and, where it is achievable, fire exactly one property.
+
+Achieving it takes more than changing one line: the fixture has to stay **internally consistent
+in every dimension except the one under test**. The first row is the model. If it uses `ω_d` in
+the exponent *and* reports the true derivative of that wrong position, then velocity agrees with
+value, the sampler tier passes, and only the metric objects. Change the position without fixing
+the velocity and both tiers fire, and the attribution is gone.
+
+Two rows cannot be made orthogonal, and the honest thing is to say so rather than to engineer
+around it:
+
+**A wrong velocity necessarily disturbs the metric**, because `completionMetric` reads velocity.
+There is no version of "velocity is wrong" that leaves `√(x² + (v/ω)²)` untouched. Tuning the
+error to exceed the sampler tier's 5% tolerance while staying inside monotonicity would be
+possible and would be worse — a fixture balanced on a tolerance is a fixture that stops working
+the day either number moves.
+
+**A wrong branch changes both the position and its derivative**, so it is coupled for the same
+reason and more strongly.
+
+For those two, attribution comes from the **shape** of the red set rather than its size, which is
+the discriminator §5's diagnostic rule already relies on: both tiers red points at the spring,
+physics tier alone points at the metric or the contract. That distinction survives coupling. What
+would destroy it is the reverse case — a fixture whose red set is *smaller* than intended, which
+is why each expected red set is written down here and asserted rather than observed after the
+fact.
 
 ---
 
@@ -188,6 +229,10 @@ turned out to be, which is why §4 leaves its rows pending rather than guessing.
 - [ ] Every physics property shown **red** against a deliberately wrong spring, before the real
       one is run
 - [ ] Each wrong spring declared in the RULE-015 pairing block
+- [ ] Each wrong spring names the **single** assumption it targets, is internally consistent in
+      every other dimension, and has its **expected red set asserted** — not observed afterwards.
+      Where coupling makes one property unavoidable, §3 records why; a red set larger than
+      declared is a defective fixture, and one smaller is a defective property
 - [ ] `AnimationHandleImpl.samplerFor` no longer refuses a `SpringSpec`; the refusal count drops
       from one to one-minus-spring, and the verify script's gate 5 is updated to match
 - [ ] §7 of the contract restated as a matrix, with the spring column filled and the reason for
