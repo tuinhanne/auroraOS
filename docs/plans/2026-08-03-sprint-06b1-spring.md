@@ -180,7 +180,25 @@ class SpringSampler(spec: SpringSpec) : MotionSampler {
     }
 ```
 
-`referenceValueInDouble` is the same closed form in `Double`, in the test file. The bound `1e-4`
+`referenceValueInDouble` is the same closed form in `Double` — **the same expression, in the same
+order, with only the type changed.** Not an independent algebraic rearrangement: if the oracle
+reorganised the algebra, a disagreement could mean the implementation is wrong, the oracle is
+wrong, or two different rearrangements lose precision in two different ways, and the test would
+not distinguish them. What is being measured is the effect of float32, not the correctness of the
+solution.
+
+That raises an obvious objection — if the oracle is the same expression, does it not reproduce the
+same bug? It does not, and the reason bounds what this test is good for. The defect is precision
+loss: the cancellation in `1 - ζ²` costs about four significant digits, which leaves three of
+float32's seven and twelve of `Double`'s sixteen. **The same poor expression is still accurate in
+`Double`**, so the comparison stands.
+
+The corollary is the boundary. This test is valid only against *precision* defects. Against a
+*structural* one — a wrong formula — an identical-expression oracle would reproduce the error and
+pass, which is exactly why the other three fixtures are caught by the tiers instead and only the
+fourth is caught here.
+
+The bound `1e-4`
 is stated rather than tuned: float32 carries about seven significant digits, the trajectory is
 order 1, and a correct implementation should stay within a few hundred ulps across two seconds.
 **If it needs widening to pass, that is the finding** — record it, do not widen it.
