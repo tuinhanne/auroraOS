@@ -301,15 +301,15 @@ so the rule fails the day someone adds a `var`.
 | `aurora.platform.animation` | the Android bridge | `ChoreographerAnimationDriver` — Sprint 08 |
 
 Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedSampler` is
-the only `MotionSampler`, and it delegates to `Timeline`. Sprint 06B.1 adds the closed-form
-sampler infrastructure — `samplerFor` dispatch, the analytic-derivative helper, the sampler test
-harness — with no solver yet; 06B.2 adds the solvers that exercise it: spring, decay and snap,
-plus `BezierInterpolator`, which is an `Interpolator` rather than a sampler, because a Bézier
-shapes progress that time has already produced, while a spring produces progress from energy.
-They plug into different seams and ADR-002 keeps them apart deliberately.
+the only `MotionSampler`, and it delegates to `Timeline`. Sprint 06B.0 settles what a solver *is*
+and writes no solver at all; 06B.1, 06B.2 and 06B.3 then add spring, decay and snap, each one an
+implementation of a contract that already exists. `BezierInterpolator` is an `Interpolator` rather
+than a sampler, because a Bezier shapes progress that time has already produced while a spring
+produces progress from energy. They plug into different seams and ADR-002 keeps them apart
+deliberately.
 
 One existing class does change: `AnimationHandleImpl.samplerFor` currently throws for every
-`PhysicsSpec`, and 06B.2 replaces those throws with branches. That is a `when` in one private
+`PhysicsSpec`, and 06B.1 onward replace those throws with branches. That is a `when` in one private
 function, and it is the *only* engine change physics requires — the state machine, the registry,
 the driver, the handle's lifecycle and every public interface stay as they are.
 
@@ -434,19 +434,105 @@ real test.
 **Sprint 05 — Configuration.** Read system properties and overlays so the runtime can toggle
 features without a rebuild.
 
-**Sprint 06B.1 — Closed-form infrastructure.** `samplerFor` dispatch, `TimedSampler` moved onto
-the new `MotionSampler` contract, the analytic-derivative helper, and the sampler test harness —
-no solver. This is where the dispatch and the harness are proven correct before a single solver
-depends on them.
+**Sprint 06B.0 — Physics semantics.** Not a framework: after 06A.5 there is nothing left to
+build one out of. `MotionSampler` has a single method, `isFinished` lives on the spec, and a
+sampler is created per execution, so a shared physics base class would be an abstraction with no
+variation to justify it — the same objection that rejected a `MotionSample` interface and a
+`CompletionPolicy`.
 
-**Sprint 06B.2 — Closed-form solvers.** The solvers that exercise 06B.1's infrastructure: spring,
-decay and snap samplers in `aurora.runtime.animation`, plus `BezierInterpolator`, each
-benchmarked. New files, apart from the `when` in `AnimationHandleImpl.samplerFor` that has to
-learn to dispatch them.
+What it does instead is settle the questions every solver has to answer the same way, before
+three of them answer differently. The design is in
+`docs/specs/2026-08-03-sprint-06b0-physics-semantics-design.md`; three decisions came out of it.
 
-Two questions have to be answered before the first solver is written, both recorded in ADR-002:
-what a decay normalises against when it has no intrinsic target, and what happens when
-`from == to` and the velocity conversion divides by the range.
+**The contract states its own domain.** It applies to every solver whose entire dynamical state
+is `(value, velocity)`. Every convergent system has a monotone Lyapunov function, so existence
+constrains nothing; the binding requirement is that one be *readable from a `MotionSample`*, which
+holds exactly for second-order autonomous systems. That is the real reason spring, decay and snap
+are one family. A PID controller carries an integral term, so two frames with the same value and
+velocity sit at different distances from rest and no function of `MotionSample` separates them —
+it does not break the contract, it falls outside it, and the extension it would need is a wider
+`MotionSample` rather than another threshold.
+
+**Completion becomes a metric, a threshold and a comparison.** The current rule cannot stand: an
+underdamped spring has zero velocity at every turning point, so once its envelope drops under
+`restDelta` the rule reports finished there and not-finished a moment later. The engine survives
+by never asking twice, but the instant a spring settles then depends on which frame lands near a
+turning point, and the same spring finishes at different times at 60Hz and 120Hz. So `PhysicsSpec`
+loses `restDelta` and `restVelocity` and gains `completionMetric` — a scalar in progress units
+that must never increase while the sampler evolves — plus one `completionThreshold`.
+`completionMetric` owns the physics, `completionThreshold` owns the UX, and `isFinished` becomes
+a comparison no spec overrides. This is the sprint's one API change, and it is free only until
+06B.1 exists.
+
+**A decay does have a target; it is derived.** Under exponential friction the total travel is
+`v0/friction`, in closed form, and normalising against it gives `1 - e^(-ft)` — **`v0` cancels
+entirely**. Initial velocity decides how far a decay goes, not how it goes. So `to` is
+`from + v0/friction`, `MotionSample.value` keeps one meaning across every family, and `from == to`
+turns out to mean exactly `v0 == 0` — a fling released at rest, which is a precondition rather
+than a hazard. ADR-002 called this circular on an unstated assumption: that finding the resting
+position means simulating to it. For exponential friction it is one division.
+
+That last decision leaves one question open rather than answered — whether `(from, to)` is
+universal or is Spring's shape wearing a general name. It blocks no deliverable here, so it is
+recorded as open analysis in the spec rather than resolved in a hurry.
+
+It produces a document the project does not yet have a place for. `docs/adr/` records why a
+decision was made and what was rejected; `docs/specs/` describes one sprint; `contracts/*.contract`
+holds layer rules that `arch-test.sh` parses. None of those is "what every implementation of this
+kind must satisfy, across sprints". That goes in `docs/contracts/motion-sampler-contract.md` — a
+new directory, prose and normative, named so it is not mistaken for the machine-read `.contract`
+files and not dropped among them.
+
+Every property in it maps to a named assertion in the harness, and any property that cannot be
+asserted says so. A contract nobody checks is prose, and this project has now been bitten twice
+by an unverified claim: `zero-diff-gate.sh` asserted no guarded line mixed a string with a
+trailing comment, and `PhysicsSpec` asserted its normalisation held for a decay. Both were true;
+neither had been checked.
+
+The harness has two tiers, because a red test has to say what is broken. A contract property
+(`assertFinite`, `assertVelocityMatchesDerivative`) runs against every sampler; when it fails on
+all of them the semantics are wrong, not the solver. A solver property (a spring oscillates
+around its target) runs against one; nothing else is expected to satisfy it. Mixing the two
+turns the harness into a demand that every solver behave like a spring.
+
+Two questions gate a property before it is written: is it a property of the contract or of one
+solver, and if every solver failed it, what would that mean? "Don't know" disqualifies it.
+
+Filing a property in the wrong tier is not a symmetric mistake. A solver property filed as
+contract fails loudly the moment the second solver cannot satisfy it. A contract property filed
+as solver-only fails silently and permanently - Decay and Snap simply never get checked and the
+harness stays green. So when the tier is unclear the property goes in the contract tier, and the
+harness reports which samplers each contract property actually ran against, so an unchecked
+solver cannot be invisible.
+
+06B.0 builds this with zero solvers in existence, so no property can be assigned a tier by
+experiment - only by argument. That is why each one is stated in prose before it is asserted,
+and why **demoting a property from contract to solver-only is a normal move, not a defect in
+06B.0**. When 06B.2 shows a decay cannot satisfy something a spring can, the contract is what
+was wrong. Sprint 06A got this backwards three times: a test asserted a promise the design had
+never made, and the first instinct each time was to change the code.
+
+The refusal in `samplerFor` stays. Removing it would mean returning something for a `SpringSpec`,
+and a placeholder sampler in production would animate silently and wrongly where the exception
+fails loudly and names the sprint that fixes it (RULE-003). It goes when a real sampler arrives.
+
+**Sprint 06B.1 — Spring.** The first solver: closed form for the underdamped, critically damped
+and overdamped cases, no integration. Because 06B.0 goes first, its opening question is not *what
+is a correct spring* — which is open-ended, and where 06A went wrong three times — but *make this
+spring satisfy the contract*, which has a stopping condition. It removes the refusal, and it is
+the first implementation the harness has ever had to judge.
+
+**Sprint 06B.2 — Decay.** 06B.0's derived target meets its first real consumer, and the settle
+time gets measured rather than guessed — the current default works out to roughly fourteen
+seconds for a fling to stop.
+
+**Sprint 06B.3 — Snap.** Chooses a target from a list, then springs to it. If it shrinks to a
+`TargetSelectionPolicy` and no solver at all, that is evidence the abstraction was found rather
+than imposed — which is why its shape waits until 06B.1 shows how general the spring turned out
+to be.
+
+`BezierInterpolator` is an `Interpolator` rather than a sampler and depends on none of this; it
+can land beside any of these sprints.
 
 **Sprint 08 — Android platform bridge.** `ChoreographerFrameScheduler` and
 `ChoreographerAnimationDriver` in `aurora.platform`. `AnimationController.tick(FrameTime)` is
