@@ -39,7 +39,7 @@ class DecayPipelineTest {
     fun aFlingInfersATravelThatReturnsTheVelocityItWasGiven() {
         val spec = DecaySpec(friction = FRICTION, initialVelocity = FRICTION)
         val animation = FlingFactory.fling("fling", from = 0f, gestureVelocity = GESTURE, spec = spec)
-        IntegrationContract.assertInferredTravelReturnsTheVelocity(
+        IntegrationContract.assertTravelPreservesTheGestureVelocity(
             "FlingFactory", animation, spec, GESTURE
         )
     }

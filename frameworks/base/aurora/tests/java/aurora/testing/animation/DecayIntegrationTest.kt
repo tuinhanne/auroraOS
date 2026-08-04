@@ -66,7 +66,7 @@ class DecayIntegrationTest {
         // Must go red. The discrepancy is v0(f - 1) = 800 * 3.6, independent of sampling rate,
         // tolerance and elapsed time.
         assertRejects(NAME) {
-            IntegrationContract.assertInferredTravelReturnsTheVelocity(
+            IntegrationContract.assertTravelPreservesTheGestureVelocity(
                 NAME, flingForgettingFriction(0f, GESTURE, spec), spec, GESTURE
             )
         }
@@ -86,7 +86,7 @@ class DecayIntegrationTest {
     @Test
     fun theWitnessCannotDistinguishAnythingAtFrictionOne() {
         val degenerate = DecaySpec(friction = 1f, initialVelocity = 1f)
-        IntegrationContract.assertInferredTravelReturnsTheVelocity(
+        IntegrationContract.assertTravelPreservesTheGestureVelocity(
             "degenerate", flingForgettingFriction(0f, GESTURE, degenerate), degenerate, GESTURE
         )
     }

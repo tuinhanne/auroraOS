@@ -28,7 +28,7 @@ import aurora.sdk.animation.MotionSampler
  * weakened by accident.
  *
  * None of these is a solver. They live in the test tree, never in `runtime/`, and
- * `verify-sprint06b0.sh` fails if one appears outside this directory.
+ * `verify-motion-evidence.sh` fails if one appears outside this directory.
  */
 
 /**

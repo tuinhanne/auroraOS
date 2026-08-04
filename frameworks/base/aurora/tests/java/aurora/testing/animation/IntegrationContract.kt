@@ -66,7 +66,7 @@ object IntegrationContract {
      * stops being sufficient, and it would need a second witness in which two sources disagree
      * while each is individually plausible.
      */
-    fun assertInferredTravelReturnsTheVelocity(
+    fun assertTravelPreservesTheGestureVelocity(
         name: String,
         animation: Animation,
         spec: DecaySpec,

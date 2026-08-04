@@ -46,7 +46,7 @@ the §7 row would be closed on evidence that does not exist.
 
 **Modified**
 - `tests/java/aurora/testing/animation/ContractSelfTest.kt` — RULE-015 pairing block
-- `tools/verify-sprint06b0.sh` — gate 5
+- `tools/verify-motion-evidence.sh` — gate 5
 - `docs/contracts/motion-sampler-contract.md` — §7 matrix
 - `frameworks/base/aurora/README.md` — RULE-016 extension, if accepted
 
@@ -206,7 +206,7 @@ order 1, and a correct implementation should stay within a few hundred ulps acro
 - [ ] **Step 5: Wire `samplerFor`, run the whole suite, commit**
 
 `AnimationHandleImpl.samplerFor` returns `SpringSampler(spec)` for a `SpringSpec` and keeps
-refusing the other two. Gate 5 of `verify-sprint06b0.sh` will now fail — leave it failing until
+refusing the other two. Gate 5 of `verify-motion-evidence.sh` will now fail — leave it failing until
 Task 4, which is where the invariant change is recorded with its reason.
 
 ---
@@ -305,7 +305,7 @@ verified.
 
 - [ ] **Step 1: §7 becomes a matrix**, spring column filled from Task 3's actual results
 
-- [ ] **Step 2: Gate 5 of `verify-sprint06b0.sh`**
+- [ ] **Step 2: Gate 5 of `verify-motion-evidence.sh`**
 
 It currently asserts exactly one `UnsupportedOperationException`, and Task 1 broke that on
 purpose. The gate did its job: it made an intended change to an invariant impossible to make

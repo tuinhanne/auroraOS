@@ -39,7 +39,7 @@ import aurora.sdk.animation.DecaySpec
  * somewhere other than its target with nothing to report it.
  *
  * Neither contract tier can see that, because both take a `MotionSampler` and work entirely on the
- * normalised side. `IntegrationContract.assertInferredTravelReturnsTheVelocity` is what observes
+ * normalised side. `IntegrationContract.assertTravelPreservesTheGestureVelocity` is what observes
  * it, and it was shown able to reject a caller that gets this wrong before this function existed.
  */
 object FlingFactory {

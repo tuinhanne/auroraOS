@@ -64,7 +64,7 @@ object IntegrationContract {
      * `v₀/friction` is correct was established in Sprint 06B.0 by
      * `aDecaysNormalisedInitialVelocityIsAlwaysItsFriction`, and is not re-proved here.
      */
-    fun assertInferredTravelReturnsTheVelocity(
+    fun assertTravelPreservesTheGestureVelocity(
         name: String,
         animation: Animation,
         spec: DecaySpec,
@@ -127,7 +127,7 @@ on the caller's side of the boundary, so the sampler is a constant in the experi
 
         // Must go red.
         assertRejects(NAME) {
-            IntegrationContract.assertInferredTravelReturnsTheVelocity(
+            IntegrationContract.assertTravelPreservesTheGestureVelocity(
                 NAME, flingForgettingFriction(0f, 800f, spec), spec, 800f
             )
         }
@@ -139,7 +139,7 @@ on the caller's side of the boundary, so the sampler is a constant in the experi
         // witness cannot distinguish them. Asserted so the exclusion is enforced rather than
         // remembered, and so nobody "fixes" the default friction to 1 without meeting this.
         val spec = DecaySpec(friction = 1f, initialVelocity = 1f)
-        IntegrationContract.assertInferredTravelReturnsTheVelocity(
+        IntegrationContract.assertTravelPreservesTheGestureVelocity(
             "degenerate", flingForgettingFriction(0f, 800f, spec), spec, 800f
         )
     }
@@ -157,7 +157,7 @@ the witness, and that is a spec-level finding, not a harness to adjust.
 - [ ] Implement it so it derives `to` through `DecaySpec.restingDisplacement`, and normalises the
       gesture velocity by the travel it just computed.
 - [ ] Add the mirror of Task 1's test: the real `fling` passes
-      `assertInferredTravelReturnsTheVelocity`.
+      `assertTravelPreservesTheGestureVelocity`.
 - [ ] `require(gestureVelocity != 0f)` — a fling released at rest has zero travel, which
       `DecaySpec` already rejects; the message should say so at this level too.
 - [ ] Do not touch `DecaySampler` or `samplerFor`.

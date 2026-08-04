@@ -62,7 +62,7 @@ second family, and the model grows then rather than now.
 
 ### The assertion carries the name of where it was born
 
-`IntegrationContract.assertInferredTravelReturnsTheVelocity` describes decay's mechanism, not what
+`IntegrationContract.assertInferredTravelReturnsTheVelocity` described decay's mechanism, not what
 it checks. *Inferred* is one of three ways `to` arrives, and the assertion never sees which.
 
 Renamed to `assertTravelPreservesTheGestureVelocity`, on the same principle that moved this
@@ -125,5 +125,5 @@ cannot cover the simplest case, nothing later will rescue it.
       a second invariant family became necessary
 - [ ] Policy properties live outside `IntegrationContract`, with their own witnesses (RULE-015)
 - [ ] `samplerFor` refuses nothing; gate 5 retires with its reason recorded rather than deleted
-- [ ] `verify-sprint06b0.sh` renamed to `verify-motion-evidence.sh`, confirmed by a full VM run
+- [ ] `verify-motion-evidence.sh` renamed to `verify-motion-evidence.sh`, confirmed by a full VM run
 - [ ] §7 shows every family end-to-end, or names precisely which is not

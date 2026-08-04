@@ -288,7 +288,7 @@ so the rule fails the day someone adds a `var`.
 deliberately wrong subject, and no orphans in either direction: no assertion without a fixture
 that can make it fail, and no fixture that nothing uses. A property never shown to go red has not
 been shown to check anything, and in a green run it reads exactly like one everything satisfies.
-`verify-sprint06b0.sh` gate 4 checks the pairing declared at the top of `ContractSelfTest`.
+`verify-motion-evidence.sh` gate 4 checks the pairing declared at the top of `ContractSelfTest`.
 
 **RULE-016 — A property must not reproduce the implementation it verifies.** Checking a central
 difference with a central difference at the same step compares a computation against itself and

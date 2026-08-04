@@ -121,7 +121,7 @@ test exercised it, which is how the defect survived 06A in the first place.
 - `docs/adr/ADR-002-sealed-animation-spec.md` — amended, not created
 
 **Created — tooling**
-- `frameworks/base/aurora/tools/verify-sprint06b0.sh`
+- `frameworks/base/aurora/tools/verify-motion-evidence.sh`
 
 No file is added under `runtime/` or `platform/`. The sprint ships no solver, and `arch-test.sh`
 plus the gate in Task 5 both enforce it.
@@ -351,7 +351,7 @@ class ContractSelfTest {
 - [ ] **Step 4: Run it. Expect green — every property both accepts and rejects**
 
 ```bash
-# On the VM: tools/verify-sprint06b0.sh does not exist yet, so run the module directly
+# On the VM: tools/verify-motion-evidence.sh does not exist yet, so run the module directly
 atest aurora-platform-tests:aurora.testing.animation.ContractSelfTest
 ```
 
@@ -761,7 +761,7 @@ dispatch, no spec, and 06B.1 does not replace it with anything.
 - Create: `docs/contracts/motion-sampler-contract.md`
 - Create: `docs/adr/ADR-008-physics-contract-domain.md`
 - Modify: `docs/adr/ADR-002-sealed-animation-spec.md`
-- Create: `frameworks/base/aurora/tools/verify-sprint06b0.sh`
+- Create: `frameworks/base/aurora/tools/verify-motion-evidence.sh`
 - Modify: `frameworks/base/aurora/README.md` — add RULE-015
 
 - [ ] **Step 1: Write the contract document**
@@ -821,7 +821,7 @@ declaration against reality from both ends:
 
 ```kotlin
 // RULE-015 pairing. Every contract property and the fixture that violates it.
-// verify-sprint06b0.sh checks each assertion here exists in the harness and each fixture
+// verify-motion-evidence.sh checks each assertion here exists in the harness and each fixture
 // exists in BrokenSamplers.kt, so neither column can name something that is not there.
 //
 //   assertFinite                  <- NaNAfterConvergenceSampler
@@ -846,7 +846,7 @@ false confidence RULE-016 was written to avoid.
 - [ ] **Step 5: Run the whole gate on the VM, then commit**
 
 ```bash
-bash frameworks/base/aurora/tools/verify-sprint06b0.sh
+bash frameworks/base/aurora/tools/verify-motion-evidence.sh
 ```
 
 ---

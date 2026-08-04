@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Sprint 06B.0 gate: the physics contract is stated, enforced, and shipped with no solver.
+# Motion evidence gate: the physics contract is stated, enforced, and shipped with no solver.
 #
-#   bash frameworks/base/aurora/tools/verify-sprint06b0.sh
+#   bash frameworks/base/aurora/tools/verify-motion-evidence.sh
 #
 # Every gate fails loudly when it matches nothing. Sprint 06A shipped a verify script whose
 # greps found nothing on an empty directory and reported clean, so each count here is checked

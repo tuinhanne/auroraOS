@@ -41,7 +41,7 @@ import kotlin.math.sqrt
  * the one under test**. That is what makes the first and fourth attributable: changing a position
  * without correcting the velocity fires both tiers and destroys the attribution.
  *
- * None of these is a solver. They live in the test tree, and `verify-sprint06b0.sh` fails if one
+ * None of these is a solver. They live in the test tree, and `verify-motion-evidence.sh` fails if one
  * appears outside it.
  */
 

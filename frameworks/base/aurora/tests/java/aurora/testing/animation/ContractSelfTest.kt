@@ -28,7 +28,7 @@ import org.junit.Test
  *
  * ## RULE-015 pairing
  *
- * Every contract property and the fixture that violates it. `verify-sprint06b0.sh` reads this
+ * Every contract property and the fixture that violates it. `verify-motion-evidence.sh` reads this
  * block and checks each name on the left is a real function in the harness, each name on the
  * right is a real class in `BrokenSamplers.kt`, and no `fun assert*` in the harness is missing
  * from the left column — so a property cannot be added later without declaring its fixture.
