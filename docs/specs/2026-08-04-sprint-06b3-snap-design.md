@@ -101,6 +101,17 @@ So the sprint amends the assertion's signature rather than its meaning, and the 
 criterion changes from *byte-identical* to *the invariant unchanged, the signature generalised
 with this as its reason*.
 
+### The general lesson, which outlives this assertion
+
+`DecaySpec.friction` was never what the integration layer wanted to check. It was **one family's
+way of obtaining a quantity the law is actually about** — the normalised initial velocity — and
+because those two coincide for a decay, the first subject could not distinguish them.
+
+That generalises into something worth carrying to the next layer: **an assertion parameterised by
+a quantity only one family owns is a specialisation waiting to be found.** It will pass every test
+until a second family arrives, and the second family will look like the problem. Here it was not
+Spring that was awkward; it was the assertion that had never been asked a second question.
+
 ---
 
 ## What is *not* integration
@@ -153,8 +164,9 @@ cannot cover the simplest case, nothing later will rescue it.
 
 - [ ] `targets` documented as value units, with the circularity argument, not the conclusion alone
 - [ ] The assertion renamed to describe what it checks
-- [ ] `SpringFactory` and `SnapFactory` both satisfy it, **unchanged** — or the sprint records why
-      a second invariant family became necessary
+- [ ] `SpringFactory` and `SnapFactory` both satisfy the same **invariant**; any change to the
+      assertion's signature carries the argument that it states the same law in a quantity no
+      single family owns
 - [ ] Policy properties live outside `IntegrationContract`, with their own witnesses (RULE-015)
 - [ ] `samplerFor` refuses nothing; gate 5 retires with its reason recorded rather than deleted
 - [ ] `verify-motion-evidence.sh` renamed to `verify-motion-evidence.sh`, confirmed by a full VM run
