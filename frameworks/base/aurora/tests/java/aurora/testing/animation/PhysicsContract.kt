@@ -65,10 +65,17 @@ object PhysicsContract {
     /**
      * The motion arrives.
      *
-     * This is what keeps a decay's two halves honest. The travel `v₀/f` is computed by whoever
-     * builds the `Animation` and the shape `1 - e^(-ft)` by the sampler; they are two readings of
-     * one friction model, and if they drift the animation still runs, still looks smooth, and
-     * stops somewhere other than its target with nothing to report it. Only this notices.
+     * ## What this does not do
+     *
+     * Sprint 06B.0 introduced it believing it kept a decay's two halves honest — the travel
+     * `v₀/f` computed by whoever builds the `Animation`, against the shape `1 - e^(-ft)` computed
+     * by the sampler. **It cannot.** This reads normalised progress, which reaches 1 for any
+     * friction, and the sampler is never given `to`. A caller using the wrong friction, the wrong
+     * formula, or no division at all still produces a green run here.
+     *
+     * The crossing is a unit boundary, and this entire harness lives on the normalised side of
+     * it. The assertion that would catch it takes a whole pipeline rather than a sampler, belongs
+     * at `AnimationService.fling`, and does not exist yet.
      *
      * The allowance is ten thresholds rather than one, because a sampler is entitled to still be
      * a little short at the last probe — the contract is that it converges, not that it has

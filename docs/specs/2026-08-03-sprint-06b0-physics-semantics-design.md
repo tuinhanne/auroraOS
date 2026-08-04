@@ -249,8 +249,14 @@ Two mitigations, and the second is the real one:
 
 1. The formula lives on the spec as `DecaySpec.restingDisplacement(v₀) = v₀ / friction`, so there
    is one implementation and the caller calls it.
-2. "The two agree" is exactly the statement that **`value → 1` as `t → ∞`**, which is a contract
-   property the harness checks. It is enforced, not commented.
+2. ~~"The two agree" is exactly the statement that **`value → 1` as `t → ∞`**, which is a contract
+   property the harness checks. It is enforced, not commented.~~
+   **Retracted 2026-08-04, before Sprint 06B.2 began.** `assertConvergesToOne` takes a sampler and
+   checks normalised progress, and a decay reaches 1 for any friction — the sampler never sees
+   `to`, so the caller's half of the model does not pass through the property at all. The
+   argument confused *the shape arriving* with *the shape arriving where the caller said it
+   would*. Mitigation 1 stands; mitigation 2 was never real, so this hazard has been unguarded
+   since 06B.0 and building its guard is the content of 06B.2.
 
 ### 4.5 The default is wrong, and this is the first sprint able to say so
 

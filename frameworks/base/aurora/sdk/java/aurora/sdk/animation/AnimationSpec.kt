@@ -293,8 +293,14 @@ data class DecaySpec(
      * So the friction model has one implementation. A caller computing `v₀/friction` itself while
      * a sampler computes `1 - e^(-ft)` would be two copies of one model, and if they drifted the
      * animation would still run, still look smooth, and stop in the wrong place with nothing to
-     * report it. `PhysicsContract.assertConvergesToOne` is what turns "the two agree" from a
-     * comment into a check.
+     * report it.
+     *
+     * **Nothing currently checks that they agree.** `PhysicsContract.assertConvergesToOne` was
+     * named for this in Sprint 06B.0 and cannot do it: it reads normalised progress, which
+     * reaches 1 for any friction, while `to` never reaches the sampler at all. The two halves are
+     * separated by a unit boundary and both contract tiers sit on the normalised side of it. The
+     * check belongs at `AnimationService.fling`, phrased in value units, and arrives in Sprint
+     * 06B.2 — which is why that sprint is about the pipeline rather than about a solver.
      *
      * Note what this does **not** do: it never reaches the sampler. Normalised against its own
      * travel, a decay's position is `1 - e^(-f·t)` and `v₀` cancels out entirely — initial

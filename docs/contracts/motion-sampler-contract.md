@@ -49,9 +49,23 @@ of the model rather than an input from the caller, which is a different thing fr
 
 `value` is not clamped. An overshooting spring passes 1 and must be allowed to.
 
-*Enforced by* `PhysicsContract.assertConvergesToOne`, which is also the only thing that notices
-when a caller's computed travel disagrees with a sampler's shape — a decay that stops in the
-wrong place still runs and still looks smooth.
+*Enforced by* `PhysicsContract.assertConvergesToOne`.
+
+> **Correction, 2026-08-04.** This clause claimed that assertion also catches a caller whose
+> computed travel disagrees with the sampler's shape. **It does not, and cannot.**
+> `assertConvergesToOne` takes a `MotionSampler` and checks that `value` reaches 1 — but `value`
+> is normalised progress and the sampler never sees `to`. A decay converges to 1 for *any*
+> friction, so a caller computing `to = from + v0/friction` with the wrong friction, the wrong
+> formula, or no division at all still produces a green run.
+>
+> The two halves of the friction model are separated by a unit boundary, and **both contract
+> tiers live entirely on the normalised side of it**. Neither can host an oracle for the crossing.
+> Catching it needs an assertion whose subject is the pipeline rather than the sampler: a fling
+> released at a measured velocity in value units must come to rest at a stated position in value
+> units. That check does not exist yet; `AnimationService.fling` is where it will live, and Sprint
+> 06B.2 is where it is built.
+>
+> Until then this hazard is guarded by **nothing**, which is what §7 now records.
 
 ---
 
