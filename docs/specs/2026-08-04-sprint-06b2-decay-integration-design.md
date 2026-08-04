@@ -23,6 +23,22 @@ not change.
 Every family before this received `to` as an input. A decay computes it, and that computation is
 the subject.
 
+#### Amended 2026-08-04, during Task 2
+
+`AnimationService` has **no implementing class**. It is an interface; `springTo` was declared in
+06A and never implemented, and `AuroraRuntime.animation()` resolves it from a registry nothing
+populates. So `fling` had nowhere to live, and building somewhere would have meant a
+`DefaultAnimationService` — an animator, a controller, callback wiring, a service lifecycle. That
+is a different sprint, and it is not what this one is about.
+
+The definition above survives it, which is why it was written without a class name. The derivation
+lives in `runtime/animation/FlingFactory` instead: still the caller, still on the value-unit side
+of the boundary, and `IntegrationContract` needs no change at all. `AnimationService.fling` is
+declared alongside `springTo` and stays unimplemented until a sprint that builds the service.
+
+Worth noting how this was caught: not by a red test, but by asking whether the named subject could
+be built. The evidence model says plainly that it cannot generate that question.
+
 ### 1.2 Where does the pipeline begin and end?
 
 ```

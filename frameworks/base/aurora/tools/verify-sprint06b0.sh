@@ -44,19 +44,22 @@ if [ "$SRC_COUNT" -lt 20 ]; then
   fail "only $SRC_COUNT Kotlin sources found; the tree is not where this script thinks it is"
 else
   pass "$SRC_COUNT Kotlin sources under sdk/ runtime/ platform/"
-  SOLVERS=$(grep -rlE 'class (Decay|Snap|Fling)Sampler' runtime platform 2>/dev/null)
+  SOLVERS=$(grep -rlE 'class (Snap|Fling)Sampler' runtime platform 2>/dev/null)
   if [ -n "$SOLVERS" ]; then
     fail "a solver no sprint has written reached production code:"
     printf '%s
 ' "$SOLVERS" | sed 's/^/          /'
   else
-    pass "no Decay, Snap or Fling sampler under runtime/ or platform/"
+    pass "no Snap or Fling sampler under runtime/ or platform/"
   fi
-  if grep -rq 'class SpringSampler' runtime 2>/dev/null; then
-    pass "SpringSampler is present, as Sprint 06B.1 intended"
-  else
-    fail "SpringSampler is missing; Sprint 06B.1 added it"
-  fi
+  for written in "SpringSampler:06B.1" "DecaySampler:06B.2"; do
+    cls="${written%%:*}"; sprint="${written##*:}"
+    if grep -rq "class $cls" runtime 2>/dev/null; then
+      pass "$cls is present, as Sprint $sprint intended"
+    else
+      fail "$cls is missing; Sprint $sprint added it"
+    fi
+  done
   # The fixtures are wrong on purpose and must never leave the test tree.
   STRAY=$(grep -rlE 'class (NaNAfterConvergence|SharedCounter|WrongDerivative|IncreasingEnvelope|NonConverging)Sampler' sdk runtime platform 2>/dev/null)
   if [ -n "$STRAY" ]; then
@@ -142,19 +145,25 @@ echo "=== 5. Only the solved families have samplers ==="
 # The gate reported green while the invariant it claimed to guard had changed - which is the
 # failure this project keeps building gates to prevent.
 #
-# It now checks which families are refused rather than how many throw sites exist.
+# It now checks which families are refused rather than how many throw sites exist. Sprint 06B.2
+# moved DecaySpec from the refused list to the solved one, which is the gate working as intended:
+# it went red the moment the invariant changed and had to be edited deliberately rather than
+# drifting green.
 HANDLE=runtime/java/aurora/runtime/animation/AnimationHandleImpl.kt
 SAMPLER_FOR=$(sed -n '/fun samplerFor/,/^        }/p' "$HANDLE" 2>/dev/null)
 if [ -z "$SAMPLER_FOR" ]; then
   fail "cannot find samplerFor in $HANDLE"
 else
-  if printf '%s' "$SAMPLER_FOR" | grep -q 'is SpringSpec ->'; then
-    pass "SpringSpec has a sampler (Sprint 06B.1)"
-  else
-    fail "SpringSpec lost its sampler; Sprint 06B.1 gave it one"
-  fi
+  for solved in "SpringSpec:06B.1" "DecaySpec:06B.2"; do
+    family="${solved%%:*}"; sprint="${solved##*:}"
+    if printf '%s' "$SAMPLER_FOR" | grep -qE "is $family *->"; then
+      pass "$family has a sampler (Sprint $sprint)"
+    else
+      fail "$family lost its sampler; Sprint $sprint gave it one"
+    fi
+  done
   UNAUTHORISED=0
-  for family in DecaySpec SnapSpec; do
+  for family in SnapSpec; do
     if printf '%s' "$SAMPLER_FOR" | grep -qE "is $family *->"; then
       fail "$family has a sampler, but no sprint has written one"
       UNAUTHORISED=$((UNAUTHORISED + 1))
@@ -162,10 +171,10 @@ else
   done
   # Conditional, for the reason gate 4c is: a green summary printed under a red line that
   # contradicts it is worse than no summary at all.
-  [ "$UNAUTHORISED" -eq 0 ] && pass "no sampler for DecaySpec or SnapSpec"
+  [ "$UNAUTHORISED" -eq 0 ] && pass "no sampler for SnapSpec"
   # The refusal must still name where each missing solver is coming from, which is what makes
   # the failure useful rather than merely loud (RULE-003).
-  for sprint in "06B.2" "06B.3"; do
+  for sprint in "06B.3"; do
     if printf '%s' "$SAMPLER_FOR" | grep -q "$sprint"; then
       pass "the refusal names Sprint $sprint"
     else

@@ -778,8 +778,9 @@ class AnimationLifecycleTest {
         // changed on purpose, so the test moves to the families that still have none rather than
         // being deleted - what it guards is that an unsolved spec fails loudly and says where its
         // solver is coming from, and two families still need that.
+        // Decay left this list in Sprint 06B.2, when it got a sampler. Snap is the last family
+        // without one, and the test stays for it rather than being deleted.
         val unsolved = listOf(
-            DecaySpec(initialVelocity = 2f) to "06B.2",
             SnapSpec(targets = listOf(0f, 1f)) to "06B.3",
         )
         for ((spec, sprint) in unsolved) {
@@ -795,6 +796,16 @@ class AnimationLifecycleTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun aDecayAnimationIsNoLongerRejected() {
+        val animator = DefaultAnimator(registry())
+        val handle = animator.create(
+            FlingFactory.fling("fling", from = 0f, gestureVelocity = 800f,
+                               spec = DecaySpec(friction = 4.6f, initialVelocity = 4.6f))
+        )
+        assertEquals(AnimationState.IDLE, handle.state)
     }
 
     @Test
