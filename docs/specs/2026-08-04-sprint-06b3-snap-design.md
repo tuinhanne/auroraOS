@@ -71,6 +71,38 @@ sprint's predecessor from `AnimationService.fling` to `FlingFactory` and that wi
 
 ---
 
+## Task 1's result, recorded 2026-08-04
+
+The stop condition fired, and it separated two claims that had been travelling together.
+
+**Question 1 is confirmed.** Writing the spring case out algebraically:
+
+```
+spring:   v_normalised · (to − from)  =  v_gesture
+decay:    friction     · (to − from)  =  v_gesture
+```
+
+These are the same equation. `friction` **is** a decay's normalised initial velocity — the
+identity Sprint 06B.0 proved and `FlingFactory` depends on — so the decay form was a
+specialisation of a general law, not a different law. One invariant covers supplied and derived
+targets, and there is no reason yet to expect selected ones to differ.
+
+**The byte-identical claim is refuted.** `assertTravelPreservesTheGestureVelocity` takes a
+`DecaySpec` and reads `spec.friction`, and a spring has no friction. Its *signature* was written
+to decay's special case, which decay itself could never reveal, because there the two quantities
+coincide.
+
+The distinction matters and the plan's stop condition exists to force it. Editing the assertion so
+a spring passes would have been the failure the plan named. Widening it to
+`PhysicsSpec.initialVelocity` — the quantity the law was always about — is the opposite: the
+general form was there all along and one family's arithmetic had disguised it.
+
+So the sprint amends the assertion's signature rather than its meaning, and the plan's exit
+criterion changes from *byte-identical* to *the invariant unchanged, the signature generalised
+with this as its reason*.
+
+---
+
 ## What is *not* integration
 
 ```
