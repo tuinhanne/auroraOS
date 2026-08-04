@@ -169,7 +169,30 @@ until 06B.3 and its rows cannot move on the spring's evidence, even though it sh
 A matching formula is not a formula verified along a trajectory, and
 `aSnapMeasuresRestExactlyAsItsSpringWould` keeps the duplicate from drifting in the meantime.
 
-### Two things qualify "verified", and conflating them costs a column its meaning
+### Three things qualify "verified", and conflating any two costs a column its meaning
+
+**Layer** — what the assertion observes. This is an observation about the assertions that exist,
+not a claim about how a motion system must be built; a later family may well add a fourth.
+
+| layer | subject | examples |
+|---|---|---|
+| solver | a `MotionSampler` | everything in `SamplerContract` and `PhysicsContract` |
+| integration | a pipeline including its caller and its unit conversion | **none yet** |
+| endpoint | the animation API as a caller observes it | 06A's endpoint-exact `valueAt`, the lifecycle tests |
+
+The middle row is empty, and that is the finding. Sprint 06A produced endpoint evidence and
+06B.1 produced solver evidence; nothing has ever observed the two joined. It went unnoticed
+because a spring does not need it — `to` is an input, `valueAt(1) == to` was proven in 06A and the
+trajectory in 06B.1, so the chain closes with no unobserved link. A decay inserts one:
+`to = from + v₀/friction` is *derived*, and no assertion has ever crossed it.
+
+> **A layer that has never existed has no calibrated assertion in it.** The first sprint to open
+> one must therefore show its assertion can *reject* before treating a pass as evidence — the
+> assertion and its subject are both new, so nothing independent remains otherwise. This is
+> RULE-015 applied to the birth of a layer rather than to a single property, and it holds for any
+> fourth layer as much as for the third.
+
+
 
 **Provenance** — what the evidence came from. *Analytic* means a trusted closed form written into
 the tests; *production* means the sampler that actually ships.
