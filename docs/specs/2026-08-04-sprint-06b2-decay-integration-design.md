@@ -71,6 +71,29 @@ than a discrepancy.
 It uses only quantities each side genuinely owns, and it does not restate `v₀/friction`, so it
 does not reproduce what it verifies (RULE-016).
 
+#### What it checks, and what it does not
+
+If `fling` derives `to` by calling `DecaySpec.restingDisplacement(v)`, then
+`(to − from)·f = (v/f)·f = v` is an **identity**, true for every friction. So the assertion does
+not prove the friction model correct. It proves that **`fling` routes through the single
+implementation of that model** — which is exactly what the witness violates, and exactly what the
+integration layer exists to observe.
+
+Stated so nobody reads a green run as more than it is. That `v₀/friction` is the right formula was
+established separately in Sprint 06B.0, by `aDecaysNormalisedInitialVelocityIsAlwaysItsFriction`
+in the SDK tests, and is not re-proved here.
+
+#### Premise: one source of friction
+
+The assertion assumes the friction used to derive `to` and the friction on the `DecaySpec` handed
+to the sampler are **the same value from the same place**. That holds in the design as it stands:
+`fling` receives one `DecaySpec` and reads `friction` from it once.
+
+Recorded because it is a premise rather than a fact about the invariant. Should a later pipeline
+admit two sources — a gesture configuration, a design token, a runtime override — the assertion
+stays true but stops being sufficient, and its witness would need to grow a second case in which
+the two sources disagree while each is individually plausible.
+
 ### 1.5 What is the first witness?
 
 A `fling` that omits the division:
