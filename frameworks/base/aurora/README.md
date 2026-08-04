@@ -324,6 +324,27 @@ rather than supplying a fixture that could not support the conclusion drawn from
 **Enforced by review**, for the same reason as RULE-016: whether a subject satisfies a theorem's
 premises is not a thing grep can decide.
 
+**RULE-018 — The first sprint introducing a new evidence layer must validate that layer's
+assertions against witnesses before treating green results as evidence.** Until those assertions
+have demonstrated rejection, neither they nor the production subjects they observe provide
+independent evidence.
+
+It is not RULE-015 at a larger scale, and the difference is worth stating because the two are
+easy to collapse. RULE-015 binds a **contract property**, and says it needs a fixture that
+violates it. RULE-018 binds a **layer**, and adds two things RULE-015 does not reach.
+
+The first is scope: an assertion in a new layer need not be a contract property at all — the
+motion contract is phrased entirely in normalised progress, so an integration assertion crossing
+a unit boundary falls outside it and RULE-015 does not literally apply.
+
+The second is how to read a pass. In an established layer a green run carries information because
+the harness around it was calibrated by earlier subjects. In a new one the assertion and its
+subject arrive together, so nothing independent is left, and a green result is not weak evidence
+but no evidence.
+
+**Enforced by review**, like RULE-016 and RULE-017 — whether a layer is new is not a thing a
+script can decide.
+
 ### Time, in three tiers
 
 | Layer | Holds | Examples |
