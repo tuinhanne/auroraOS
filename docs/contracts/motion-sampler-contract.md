@@ -169,6 +169,25 @@ until 06B.3 and its rows cannot move on the spring's evidence, even though it sh
 A matching formula is not a formula verified along a trajectory, and
 `aSnapMeasuresRestExactlyAsItsSpringWould` keeps the duplicate from drifting in the meantime.
 
+### Two things qualify "verified", and conflating them costs a column its meaning
+
+**Provenance** — what the evidence came from. *Analytic* means a trusted closed form written into
+the tests; *production* means the sampler that actually ships.
+
+The distinction bites hardest where the two coincide. A decay's closed form is three lines, so
+`DecaySampler` will be **the same expression** as `DecayTrajectory` — moving it from `tests/` to
+`runtime/` produces no evidence the contract does not already have. A spring's was not: two
+branches, a removable singularity and a cancellation, so its production subject could contradict
+the spec, and did, four times.
+
+**Domain** — where the evidence was gathered. Both tiers take a `MotionSampler` and work in
+**normalised progress**, so every row below is verified on the normalised side of the unit
+boundary and nowhere else. A clause can be production-verified and still never have been checked
+where value units are converted, which is exactly the state §2's correction describes.
+
+That is why Sprint 06B.2 is about the pipeline rather than about a solver: the solver adds nothing
+to the first column, and the second column has never been touched at all.
+
 | clause | Spring | Decay | Snap | violating fixture |
 |---|---|---|---|---|
 | §4 completion | **verified 06B.1** | verified 06B.0 | pending its own sampler | `IncreasingEnvelopeSampler`, `UndampedEnvelopeSpring` |
