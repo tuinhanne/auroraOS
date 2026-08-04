@@ -47,11 +47,12 @@ import org.junit.Assert.fail
 object SamplerContract {
 
     /**
-     * Two seconds at 10ms, ascending.
+     * Two seconds at 10ms, ascending. The coverage grid.
      *
-     * The spacing is deliberately not any sampler's internal step. `TimedSampler` differentiates
-     * with `EPSILON_NANOS = 500_000L`; checking it at the same step with the same method would
-     * compare a computation against itself and pass for every input (RULE-016).
+     * Dense enough to catch a defect that appears only in part of a motion. It is **not** the
+     * grid the derivative check differentiates on — see [DERIVATIVE_PROBES_NANOS]. Coverage and
+     * measurement accuracy are separate concerns and move for separate reasons; conflating them
+     * is what left the derivative check measuring itself when its first stiff subject arrived.
      */
     val PROBES_NANOS: List<Long> = (0..200).map { it * 10_000_000L }
 
@@ -97,29 +98,60 @@ object SamplerContract {
     }
 
     /**
+     * Two seconds at 1ms, ascending. The grid this property differentiates on.
+     *
+     * Separate from [PROBES_NANOS] on purpose: that one exists for **coverage** — enough points
+     * across the motion to catch a local defect — while this one sets the **accuracy of the
+     * measurement**, which is a different concern and moves for different reasons.
+     *
+     * Still not any sampler's own step, so RULE-016 holds: `TimedSampler` differentiates at
+     * 0.5ms, and comparing a central difference against itself at the same step would pass for
+     * every input.
+     */
+    private val DERIVATIVE_PROBES_NANOS: List<Long> = (0..2000).map { it * 1_000_000L }
+
+    /**
      * Reported velocity is the derivative of reported value.
      *
-     * The comparison is a central difference over the probe spacing — 10ms, twenty times
-     * `TimedSampler`'s own 0.5ms — computed from samples already collected in the single forward
-     * pass. Using the sampler's own step and its own method would make this a tautology; using a
-     * different one means a sampler whose velocity is genuinely the derivative still agrees,
-     * while one that reports something else does not.
+     * ## The oracle's accuracy is itself a criterion
+     *
+     * This compares against a numerical approximation, so the approximation's error has to stay
+     * well under [TOLERANCE] for **every subject the contract admits** — otherwise the property
+     * stops measuring the sampler and starts measuring itself.
+     *
+     * The step was 10ms in Sprint 06B.0, chosen when this harness had exactly one subject:
+     * `TimedSampler`, whose timescale is a whole timeline. Sprint 06B.1 brought the first subject
+     * with a high natural frequency, `SPRING_SNAPPY` at `ω = √800 ≈ 28.3`, and central difference
+     * truncation error grows as `(h·ω)²/6` — which reached about 6% there, above the 5% it was
+     * being compared against. The spring was right: its analytic derivative agreed with the closed
+     * form to four digits.
+     *
+     * So the step is 1ms and the tolerance is unchanged. **The tolerance is the standard of
+     * acceptance; the step is the quality of the measurement**, and it was the measurement that
+     * was inadequate. Widening the tolerance would have hidden the class of error this property
+     * exists to catch. Deriving the step from the subject's own `ω` would have been worse still —
+     * the property would then take its method from the thing it verifies.
+     *
+     * At 1ms the approximation error is near 0.01% for that spring and about 1.7% even at a
+     * stiffness of 10 000. A faster solver than that raises the question *"is the oracle still
+     * accurate enough?"*, and the answer belongs here rather than in the solver.
      *
      * The tolerance is relative because velocity spans orders of magnitude across a motion, and a
      * fixed epsilon would be either meaningless early or unmeetable late. Endpoints are skipped:
      * a central difference needs a neighbour on each side.
      */
     fun assertVelocityMatchesDerivative(name: String, sampler: MotionSampler) {
-        val samples = scan(sampler)
+        val samples = DERIVATIVE_PROBES_NANOS.map { sampler.sampleAt(it) }
         for (i in 1 until samples.size - 1) {
-            val seconds = (PROBES_NANOS[i + 1] - PROBES_NANOS[i - 1]) / 1_000_000_000f
+            val seconds =
+                (DERIVATIVE_PROBES_NANOS[i + 1] - DERIVATIVE_PROBES_NANOS[i - 1]) / 1_000_000_000f
             val numeric = (samples[i + 1].value - samples[i - 1].value) / seconds
             val reported = samples[i].velocity
             val scale = maxOf(abs(numeric), abs(reported), 1f)
             if (abs(numeric - reported) / scale > TOLERANCE) {
                 fail(
-                    "$name reported velocity $reported at ${PROBES_NANOS[i]}ns, but its value " +
-                        "changes at $numeric per second there"
+                    "$name reported velocity $reported at ${DERIVATIVE_PROBES_NANOS[i]}ns, but " +
+                        "its value changes at $numeric per second there"
                 )
             }
         }

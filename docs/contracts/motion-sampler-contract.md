@@ -63,6 +63,28 @@ wrong place still runs and still looks smooth.
 difference **at a step different from any sampler's own** (RULE-016). Checking a central
 difference with a central difference at the same step passes for every input.
 
+### The oracle's own accuracy is a criterion, and it is not fixed forever
+
+The comparison uses a numerical approximation, so the approximation's error must stay well below
+the 5% tolerance **across every subject the contract admits** — otherwise the property stops
+measuring the sampler and starts measuring the oracle.
+
+Central difference truncation error grows as `(h·ω)²/6` in the motion's own frequency. The step
+was 10ms when this harness was written in Sprint 06B.0, chosen when it had exactly one subject:
+`TimedSampler`, whose timescale is a whole timeline. Sprint 06B.1 supplied the first subject with
+a high natural frequency — `SPRING_SNAPPY` at `ω = √800 ≈ 28.3` — and there the oracle's own error
+reached roughly 6%, above the tolerance it was being compared against. The sampler was correct;
+its analytic derivative agreed with the closed form to four digits.
+
+The step is therefore **1ms**, which puts the approximation error near 0.01% for that spring and
+around 1.7% even at a stiffness of 10 000. It remains distinct from `TimedSampler`'s internal
+0.5ms, so RULE-016 still holds.
+
+The question a future solver raises is *"is the oracle still accurate enough?"* — not *"does this
+solver need a different step?"*. Widening the 5% tolerance would answer the wrong question: the
+tolerance is the standard of acceptance and the step is the quality of the measurement, and it
+was the measurement that was inadequate.
+
 ---
 
 ## 4. Completion
@@ -127,15 +149,25 @@ adds a solver, and it comes before writing one: each row that moves from unverif
 makes the contract stronger, and each row that has to be **changed** in the process means the
 contract learned something from its first implementation.
 
-Sprint 06B.0 delivers this contract with no solver in existence, so two clauses are here.
+**Verified is a property of a pair, not of a clause.** It holds of `(clause, subject family)`, so
+the backlog is a matrix. Sprint 06B.1 gave the spring a trajectory subject; snap has no sampler
+until 06B.3 and its rows cannot move on the spring's evidence, even though it shares the formula.
+A matching formula is not a formula verified along a trajectory, and
+`aSnapMeasuresRestExactlyAsItsSpringWould` keeps the duplicate from drifting in the meantime.
 
-| clause | violating fixture | trajectory subject |
-|---|---|---|
-| §4 completion | `IncreasingEnvelopeSampler` | decay only — `DecayTrajectory` |
-| §2 convergence | `NonConvergingSampler` | decay only — `DecayTrajectory` |
+| clause | Spring | Decay | Snap | violating fixture |
+|---|---|---|---|---|
+| §4 completion | **verified 06B.1** | verified 06B.0 | pending its own sampler | `IncreasingEnvelopeSampler`, `UndampedEnvelopeSpring` |
+| §2 convergence | **verified 06B.1** | verified 06B.0 | pending its own sampler | `NonConvergingSampler`, `WrongBranchSpring` |
 
-**The spring and snap envelopes have no trajectory subject.** This is RULE-017 in force rather
-than an oversight. Their metric is never-increasing because `dE/dt = -2ζωv²` along solutions of
+Sprint 06B.1 closed the spring column, and the green means something because the properties were
+shown able to reject a spring **before** the real one ran. That mattered more than usual here:
+`SpringSpec.completionMetric` and a spring trajectory both derive from the same `ω`, so a correct
+closed form makes the metric exactly `A·e^(-ζωt)` — monotone by construction, and a property could
+have passed having examined nothing.
+
+**Snap's envelope still has no trajectory subject; the spring's now does.** What follows was
+written in Sprint 06B.0 and remains true of snap. RULE-017 in force rather than an oversight. Their metric is never-increasing because `dE/dt = -2ζωv²` along solutions of
 `ẍ + 2ζωẋ + ω²x = 0`; a hand-built oscillation is not a solution, so the metric need not fall
 along it and a failure would not distinguish a wrong metric from a wrong fixture. A genuine
 solution is the closed form, which is Sprint 06B.1.
@@ -146,7 +178,8 @@ counting speed as `v/ω` of remaining travel, and shrinking with stiffness at a 
 pin the properties the monotonicity argument needs in order to be about the right quantity. They
 are not a substitute for running it along a trajectory.
 
-**Sprint 06B.1 is the first real test of the spring envelope, not a regression check on it.**
+**Sprint 06B.1 was the first real test of the spring envelope, and it passed.** The algebraic
+checks stay, because they are what pins the formula while snap still waits for a trajectory.
 
 ### 7.1 Order of investigation when a backlog clause first goes red
 

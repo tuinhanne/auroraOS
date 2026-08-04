@@ -24,6 +24,7 @@ import aurora.sdk.animation.AnimationState
 import aurora.sdk.animation.MotionSample
 import aurora.sdk.animation.MotionSampler
 import aurora.sdk.animation.PhysicsSpec
+import aurora.sdk.animation.SpringSpec
 import aurora.sdk.animation.TimedSpec
 import aurora.sdk.event.Disposable
 import aurora.sdk.time.FrameTime
@@ -274,9 +275,10 @@ class AnimationHandleImpl(
 
         fun samplerFor(spec: AnimationSpec): MotionSampler = when (spec) {
             is TimedSpec -> TimedSampler(spec)
+            is SpringSpec -> SpringSampler(spec)
             is PhysicsSpec -> throw UnsupportedOperationException(
-                "physics animations arrive in Sprint 06B; ${spec.javaClass.simpleName} has no " +
-                    "sampler yet"
+                "${spec.javaClass.simpleName} has no sampler yet; decay arrives in Sprint 06B.2 " +
+                    "and snap in 06B.3"
             )
         }
     }

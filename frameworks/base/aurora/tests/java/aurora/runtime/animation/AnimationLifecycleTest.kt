@@ -20,7 +20,9 @@ import aurora.sdk.animation.Animation
 import aurora.sdk.animation.AnimationHandle
 import aurora.sdk.animation.AnimationListener
 import aurora.sdk.animation.AnimationState
+import aurora.sdk.animation.DecaySpec
 import aurora.sdk.animation.Interpolator
+import aurora.sdk.animation.SnapSpec
 import aurora.sdk.animation.SpringSpec
 import aurora.sdk.animation.TimedSpec
 import aurora.sdk.time.AuroraClock
@@ -768,20 +770,39 @@ class AnimationLifecycleTest {
         }
     }
 
-    // --- physics is declared but not yet solved -------------------------------
+    // --- physics: solved for springs, still refused for the rest ---------------
 
     @Test
-    fun aPhysicsAnimationIsRejectedWithAMessageNamingTheSprint() {
-        val animator = DefaultAnimator(registry())
-        try {
-            animator.create(Animation("spring", SpringSpec()))
-            fail("06A has no solver; the failure must be loud")
-        } catch (expected: UnsupportedOperationException) {
-            assertTrue(
-                "the message must say where the solver is coming from, got: ${expected.message}",
-                expected.message!!.contains("06B")
-            )
+    fun anUnsolvedPhysicsAnimationIsRejectedWithAMessageNamingTheSprint() {
+        // This asserted `SpringSpec` until Sprint 06B.1 gave springs a solver. The invariant
+        // changed on purpose, so the test moves to the families that still have none rather than
+        // being deleted - what it guards is that an unsolved spec fails loudly and says where its
+        // solver is coming from, and two families still need that.
+        val unsolved = listOf(
+            DecaySpec(initialVelocity = 2f) to "06B.2",
+            SnapSpec(targets = listOf(0f, 1f)) to "06B.3",
+        )
+        for ((spec, sprint) in unsolved) {
+            val animator = DefaultAnimator(registry())
+            try {
+                animator.create(Animation(spec.javaClass.simpleName, spec))
+                fail("${spec.javaClass.simpleName} has no solver; the failure must be loud")
+            } catch (expected: UnsupportedOperationException) {
+                assertTrue(
+                    "the message must name the sprint bringing the solver, got: " +
+                        "${expected.message}",
+                    expected.message!!.contains(sprint)
+                )
+            }
         }
+    }
+
+    @Test
+    fun aSpringAnimationIsNoLongerRejected() {
+        // The other half of the change above, stated so the refusal cannot quietly come back.
+        val animator = DefaultAnimator(registry())
+        val handle = animator.create(Animation("spring", SpringSpec(initialVelocity = 2f)))
+        assertEquals(AnimationState.IDLE, handle.state)
     }
 
     // --- animator -------------------------------------------------------------

@@ -35,18 +35,27 @@ else
 fi
 
 echo
-echo "=== 2. The sprint ships no solver ==="
+echo "=== 2. Only the sprints that wrote a solver have one ==="
+# Was "the sprint ships no solver". Sprint 06B.1 wrote SpringSampler, so this gate fired - which
+# is the gate working: an intended change to an invariant could not be made silently. Narrowed
+# rather than deleted, since it still guards the three families nobody has solved.
 SRC_COUNT=$(find sdk runtime platform -name '*.kt' | wc -l)
 if [ "$SRC_COUNT" -lt 20 ]; then
   fail "only $SRC_COUNT Kotlin sources found; the tree is not where this script thinks it is"
 else
   pass "$SRC_COUNT Kotlin sources under sdk/ runtime/ platform/"
-  SOLVERS=$(grep -rlE 'class (Spring|Decay|Snap|Fling)Sampler' runtime platform 2>/dev/null)
+  SOLVERS=$(grep -rlE 'class (Decay|Snap|Fling)Sampler' runtime platform 2>/dev/null)
   if [ -n "$SOLVERS" ]; then
-    fail "a solver reached production code:"
-    printf '%s\n' "$SOLVERS" | sed 's/^/          /'
+    fail "a solver no sprint has written reached production code:"
+    printf '%s
+' "$SOLVERS" | sed 's/^/          /'
   else
-    pass "no solver under runtime/ or platform/"
+    pass "no Decay, Snap or Fling sampler under runtime/ or platform/"
+  fi
+  if grep -rq 'class SpringSampler' runtime 2>/dev/null; then
+    pass "SpringSampler is present, as Sprint 06B.1 intended"
+  else
+    fail "SpringSampler is missing; Sprint 06B.1 added it"
   fi
   # The fixtures are wrong on purpose and must never leave the test tree.
   STRAY=$(grep -rlE 'class (NaNAfterConvergence|SharedCounter|WrongDerivative|IncreasingEnvelope|NonConverging)Sampler' sdk runtime platform 2>/dev/null)
@@ -124,13 +133,45 @@ fi
 note "whether each pair is actually exercised is enforced by review; grep cannot see it"
 
 echo
-echo "=== 5. Physics is still refused at runtime ==="
-REFUSALS=$(grep -rc 'UnsupportedOperationException(' runtime/java/aurora/runtime/animation/AnimationHandleImpl.kt 2>/dev/null)
-TOTAL=$(grep -rl 'UnsupportedOperationException(' sdk runtime platform 2>/dev/null | wc -l)
-if [ "${REFUSALS:-0}" -eq 1 ] && [ "$TOTAL" -eq 1 ]; then
-  pass "samplerFor still refuses a PhysicsSpec, in exactly one place"
+echo "=== 5. Only the solved families have samplers ==="
+# Sprint 06B.1 rewrote this gate, because it did not fail when it should have.
+#
+# It used to count occurrences of UnsupportedOperationException( and require exactly one.
+# `samplerFor` has one throw site covering `is PhysicsSpec ->`, so adding `is SpringSpec ->
+# SpringSampler(spec)` above it took springs out of the refused set without changing the count.
+# The gate reported green while the invariant it claimed to guard had changed - which is the
+# failure this project keeps building gates to prevent.
+#
+# It now checks which families are refused rather than how many throw sites exist.
+HANDLE=runtime/java/aurora/runtime/animation/AnimationHandleImpl.kt
+SAMPLER_FOR=$(sed -n '/fun samplerFor/,/^        }/p' "$HANDLE" 2>/dev/null)
+if [ -z "$SAMPLER_FOR" ]; then
+  fail "cannot find samplerFor in $HANDLE"
 else
-  fail "expected one refusal in AnimationHandleImpl.kt; found $REFUSALS there and $TOTAL file(s) overall"
+  if printf '%s' "$SAMPLER_FOR" | grep -q 'is SpringSpec ->'; then
+    pass "SpringSpec has a sampler (Sprint 06B.1)"
+  else
+    fail "SpringSpec lost its sampler; Sprint 06B.1 gave it one"
+  fi
+  UNAUTHORISED=0
+  for family in DecaySpec SnapSpec; do
+    if printf '%s' "$SAMPLER_FOR" | grep -qE "is $family *->"; then
+      fail "$family has a sampler, but no sprint has written one"
+      UNAUTHORISED=$((UNAUTHORISED + 1))
+    fi
+  done
+  # Conditional, for the reason gate 4c is: a green summary printed under a red line that
+  # contradicts it is worse than no summary at all.
+  [ "$UNAUTHORISED" -eq 0 ] && pass "no sampler for DecaySpec or SnapSpec"
+  # The refusal must still name where each missing solver is coming from, which is what makes
+  # the failure useful rather than merely loud (RULE-003).
+  for sprint in "06B.2" "06B.3"; do
+    if printf '%s' "$SAMPLER_FOR" | grep -q "$sprint"; then
+      pass "the refusal names Sprint $sprint"
+    else
+      fail "the refusal does not say that Sprint $sprint brings a solver"
+    fi
+  done
 fi
 
 echo
@@ -166,7 +207,7 @@ if [ "$FAILURES" -eq 0 ]; then
   fi
   echo
   echo "Not checked here, and deliberately so:"
-  echo "  - the spring envelope has no trajectory subject until 06B.1 (RULE-017)"
+  echo "  - the snap envelope has no trajectory subject until 06B.3 (RULE-017)"
   echo "  - RULE-016 and RULE-017 are enforced by review; no script can decide either"
   exit 0
 fi

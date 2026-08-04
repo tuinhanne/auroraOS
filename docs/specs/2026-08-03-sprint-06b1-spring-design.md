@@ -175,8 +175,8 @@ Not a negative test suite. Its subject is the **property**, not the spring. It s
 
 | deliberately wrong spring | targets | expected red set |
 |---|---|---|
-| envelope decays at `ω_d` where it should decay at `ω_n` | the metric's monotonicity | physics tier only |
-| velocity omits `ζ` from the derivative | the derivative property | **both tiers** — see below |
+| envelope does not decay at all | the metric's monotonicity | physics tier only — both its properties |
+| velocity omits `ζ` from the derivative | the derivative property | sampler tier only |
 | overdamped branch taken for `ζ < 1` | branch selection | **both tiers** |
 | `1 - ζ²` by direct subtraction, sampled at `ζ = 0.9999` | §2's cancellation fix | **neither tier** — the stability test alone |
 
@@ -205,24 +205,50 @@ the exponent *and* reports the true derivative of that wrong position, then velo
 value, the sampler tier passes, and only the metric objects. Change the position without fixing
 the velocity and both tiers fire, and the attribution is gone.
 
-Two rows cannot be made orthogonal, and the honest thing is to say so rather than to engineer
-around it:
+**Corrected by the evidence in Task 2.** Two claims below were written before any witness had
+been run, and both were wrong. They are replaced rather than deleted, because what they got wrong
+is the useful part.
 
-**A wrong velocity necessarily disturbs the metric**, because `completionMetric` reads velocity.
-There is no version of "velocity is wrong" that leaves `√(x² + (v/ω)²)` untouched. Tuning the
-error to exceed the sampler tier's 5% tolerance while staying inside monotonicity would be
-possible and would be worse — a fixture balanced on a tolerance is a fixture that stops working
-the day either number moves.
+**A wrong velocity does *not* necessarily disturb the metric.** The original argument was that
+`completionMetric` reads velocity, so nothing that breaks velocity can leave `√(x² + (v/ω)²)`
+untouched. False, and specifically so: the term that witness drops is the *damping* part of the
+derivative, and `y' + ζωy` is the undamped part. Substituting the true solution leaves
 
-**A wrong branch changes both the position and its derivative**, so it is coupled for the same
-reason and more strongly.
+```
+metric² = A² e^(-2ζωt) · [ cos² + (1-ζ²) sin² ]
+```
 
-For those two, attribution comes from the **shape** of the red set rather than its size, which is
-the discriminator §5's diagnostic rule already relies on: both tiers red points at the spring,
-physics tier alone points at the metric or the contract. That distinction survives coupling. What
-would destroy it is the reverse case — a fixture whose red set is *smaller* than intended, which
-is why each expected red set is written down here and asserted rather than observed after the
-fact.
+— a bracket oscillating between 1 and `1-ζ²` inside an exponential falling by `e^(-2.36)` each
+quarter cycle for `SPRING_BOUNCY`. The product still decreases, so the metric stays monotone and
+the physics tier is right to accept it. The witness is **orthogonal**, and only the wrong-branch
+witness is genuinely coupled — one row, not two.
+
+**A witness must fail by a margin independent of how finely the property samples.** The first
+envelope witness decayed at `ω_d` instead of `ζω`, and it was too weak. Differentiating
+`metric² = y² + (y'/ω)²` gives `2y'(y(1 - ω'²/ω²) - 2λy'/ω²)` with `ω'` the trajectory's own
+natural frequency; decaying too fast puts `ω'` above `ω`, leaving a rise only in a narrow
+second-order window at each turning point — while the envelope was falling 16% between probes and
+swamping it. Dropping the damping entirely flips that sign, and `metric²` then swings between
+`A²` and `(1-ζ²)A²` every half cycle: 25% for `SPRING_BOUNCY`, visible at any sampling rate.
+
+That generalises into a rule for this sprint and the ones after it:
+
+> There are two ways to turn a property red — sharpen the oracle, or strengthen the witness.
+> **Prefer the witness.** A witness describes a class of error; an oracle describes a capacity to
+> measure. A witness that only fails once sampling is fine enough has made itself a function of
+> the oracle's implementation, and has stopped being minimal.
+
+Sharpening the grid here would also have been the second harness adjustment in one sprint, and
+unlike the first it would have been tuning until red.
+
+For the one coupled row, attribution comes from the **shape** of the red set rather than its size,
+which is the discriminator §5's diagnostic rule already relies on: both tiers red points at the
+spring, physics tier alone points at the metric or the contract. That distinction survives
+coupling.
+
+What would destroy it is the reverse case — a red set *smaller* than intended — and that is
+precisely what Task 2 found twice. Declaring each red set in advance and asserting it, rather than
+observing it afterwards, is what turned two silent weaknesses into two findings.
 
 ---
 

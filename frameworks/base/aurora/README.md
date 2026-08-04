@@ -297,6 +297,18 @@ because `TimedSampler` differentiates at 0.5ms. **Enforced by review** — no sc
 whether two computations are the same idea, and a gate pretending otherwise would be the false
 confidence this rule exists to prevent.
 
+**RULE-016 is extended by Sprint 06B.1.** A property must also not derive its expected behaviour
+from the same mathematical construction that produced its subject — unless it has first been
+validated against a subject built to violate it. `SpringSpec.completionMetric` and a spring
+trajectory both come from one `ω`, so a correct closed form makes the metric exactly `A·e^(-ζωt)`,
+monotone by construction, and the property could pass having examined nothing. That entailment
+cannot be designed away; it can only be paid for, which is what the wrong springs in
+`WrongSprings.kt` are for.
+
+The wording is *derivation* rather than *modelling assumption* deliberately. `trajectory → energy
+decay` and `trajectory → phase continuity` share an oscillator and are entirely independent
+derivations; a rule catching both would forbid most useful physics testing.
+
 **RULE-017 — A property may only be asserted of a subject inside the domain where its
 justification holds.** Sprint 06B.0 found this the expensive way. A spring's completion metric is
 never-increasing because `dE/dt = -2ζωv²`, which is a statement about *solutions of*
