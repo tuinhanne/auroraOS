@@ -18,7 +18,6 @@ package aurora.testing.animation
 
 import aurora.sdk.animation.DecaySpec
 import aurora.sdk.animation.MotionSample
-import aurora.sdk.animation.SnapSpec
 import aurora.sdk.animation.SpringSpec
 import aurora.sdk.design.MotionTokens
 import org.junit.Assert.assertEquals
@@ -137,16 +136,18 @@ class PhysicsContractTest {
         assertTrue(snappy.completionMetric(moving) < gentle.completionMetric(moving))
     }
 
-    @Test
-    fun aSnapMeasuresRestExactlyAsItsSpringWould() {
-        // Snap duplicates the formula rather than sharing it, so this is the check that the
-        // duplicate has not drifted. It is the cost of declining to extract a base class two
-        // specs would use, and it is cheaper than the base class.
-        val sample = MotionSample(0.8f, 1.5f)
-        val snap = SnapSpec(targets = listOf(0f, 1f), spring = MotionTokens.SPRING_BOUNCY)
-        val spring = SpringSpec(spring = MotionTokens.SPRING_BOUNCY)
-        assertEquals(spring.completionMetric(sample), snap.completionMetric(sample), 0f)
-    }
+    // `aSnapMeasuresRestExactlyAsItsSpringWould` retired in Sprint 06B.3, with its subject.
+    //
+    // It checked that `SnapSpec.completionMetric` had not drifted from the `SpringSpec` formula it
+    // duplicated — the cost Sprint 06B.0 accepted for declining to extract a base class that only
+    // two specs would use.
+    //
+    // Task 4's audit found this was the **only** remaining reference to that member: no caller, no
+    // runtime path, and one test whose sole purpose was to check the duplicate matched the
+    // original. A reference that exists only because the thing it references exists keeps nothing
+    // alive. Both retire together, and the duplication they were about is gone rather than
+    // guarded: a snap now becomes a `SpringSpec` and measures rest with the spring's formula
+    // because it *is* that spring, not because two copies were kept in step (ADR-009).
 
     private fun assertRejects(what: String, body: () -> Unit) {
         var rejected = false

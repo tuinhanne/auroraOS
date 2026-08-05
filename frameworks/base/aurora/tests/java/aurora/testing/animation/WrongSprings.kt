@@ -43,6 +43,18 @@ import kotlin.math.sqrt
  *
  * None of these is a solver. They live in the test tree, and `verify-motion-evidence.sh` fails if one
  * appears outside it.
+ *
+ * ## That sentence was false until Sprint 06B.3
+ *
+ * Worth recording where it was written rather than only in the sprint that found it. The gate it
+ * refers to checked a hardcoded list of five class names in `BrokenSamplers.kt`. None of the four
+ * below was on it, and nobody extended the list when this file was added in Sprint 06B.1 — so the
+ * guarantee was claimed here and enforced nowhere, for two sprints.
+ *
+ * A normative claim nothing enforces is the exact failure 06B.1 caught in the contract prose, and
+ * it reappeared in a comment about the gate built in response. The check now derives its witness
+ * set from this file and the manifest instead of naming classes, so adding a fifth wrong spring
+ * extends it without anyone remembering to.
  */
 
 /**

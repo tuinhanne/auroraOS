@@ -363,8 +363,11 @@ script can decide.
 
 Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedSampler` is
 the only `MotionSampler`, and it delegates to `Timeline`. Sprint 06B.0 settles what a solver *is*
-and writes no solver at all; 06B.1, 06B.2 and 06B.3 then add spring, decay and snap, each one an
-implementation of a contract that already exists. `BezierInterpolator` is an `Interpolator` rather
+and writes no solver at all; 06B.1 and 06B.2 then add the spring and the decay, each one an
+implementation of a contract that already exists. 06B.3 was to add the third and did not: snap
+turned out to be a target selection followed by a spring, so it needed no solver, and `SnapSpec`
+left the spec hierarchy rather than gaining one (ADR-009). Two of the five families named in
+advance — fling and snap — were not families at all. `BezierInterpolator` is an `Interpolator` rather
 than a sampler, because a Bezier shapes progress that time has already produced while a spring
 produces progress from energy. They plug into different seams and ADR-002 keeps them apart
 deliberately.
@@ -508,8 +511,8 @@ three of them answer differently. The design is in
 **The contract states its own domain.** It applies to every solver whose entire dynamical state
 is `(value, velocity)`. Every convergent system has a monotone Lyapunov function, so existence
 constrains nothing; the binding requirement is that one be *readable from a `MotionSample`*, which
-holds exactly for second-order autonomous systems. That is the real reason spring, decay and snap
-are one family. A PID controller carries an integral term, so two frames with the same value and
+holds exactly for second-order autonomous systems. That is the real reason spring and decay are one
+family — and why snap needed no solver of its own, since a snap's dynamics are a spring's exactly. A PID controller carries an integral term, so two frames with the same value and
 velocity sit at different distances from rest and no function of `MotionSample` separates them —
 it does not break the contract, it falls outside it, and the extension it would need is a wider
 `MotionSample` rather than another threshold.

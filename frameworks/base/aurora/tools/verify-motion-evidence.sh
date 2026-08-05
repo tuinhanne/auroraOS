@@ -35,39 +35,33 @@ else
 fi
 
 echo
-echo "=== 2. Only the sprints that wrote a solver have one ==="
-# Was "the sprint ships no solver". Sprint 06B.1 wrote SpringSampler, so this gate fired - which
-# is the gate working: an intended change to an invariant could not be made silently. Narrowed
-# rather than deleted, since it still guards the three families nobody has solved.
-SRC_COUNT=$(find sdk runtime platform -name '*.kt' | wc -l)
+echo "=== 2. Retired in Sprint 06B.3 ==="
+# "Only the sprints that wrote a solver have one." Recorded rather than deleted, because a gate
+# that vanishes is indistinguishable from one nobody noticed had stopped running.
+#
+# It made three claims and each was overtaken:
+#
+#   - no Snap or Fling sampler in production. Neither can exist now. FlingFactory produces a
+#     DecaySpec, and Sprint 06B.3 found snap is a selection followed by a spring, so SnapSpec left
+#     the AnimationSpec hierarchy (ADR-009) and there is nothing for a SnapSampler to sample.
+#   - SpringSampler and DecaySampler are present. Now enforced by the compiler: samplerFor's `when`
+#     is exhaustive over a sealed hierarchy with no `else`, so removing a branch fails the build
+#     rather than this gate. A type error beats a grep.
+#   - the broken fixtures never leave the test tree. **This one was still live**, and it moved into
+#     gate 4 rather than retiring - it belongs to RULE-015 by role, and it needed rewriting anyway.
+#     Gate 2 grepped a hardcoded list of five class names which had not been extended when Sprint
+#     06B.1 added four spring witnesses, so it covered none of them while `WrongSprings.kt` carried
+#     a KDoc line promising it did. A normative claim nothing enforced, which is precisely the
+#     failure 06B.1 caught elsewhere.
+note "gate 2 retired in Sprint 06B.3; its one live check is now gate 4d, and derived not hardcoded"
+
+# The tree-sanity check gate 2 opened with, kept because gate 4d greps the same directories and a
+# grep over a directory that is not there reports clean.
+SRC_COUNT=$(find sdk runtime platform -name '*.kt' 2>/dev/null | wc -l)
 if [ "$SRC_COUNT" -lt 20 ]; then
   fail "only $SRC_COUNT Kotlin sources found; the tree is not where this script thinks it is"
 else
   pass "$SRC_COUNT Kotlin sources under sdk/ runtime/ platform/"
-  SOLVERS=$(grep -rlE 'class (Snap|Fling)Sampler' runtime platform 2>/dev/null)
-  if [ -n "$SOLVERS" ]; then
-    fail "a solver no sprint has written reached production code:"
-    printf '%s
-' "$SOLVERS" | sed 's/^/          /'
-  else
-    pass "no Snap or Fling sampler under runtime/ or platform/"
-  fi
-  for written in "SpringSampler:06B.1" "DecaySampler:06B.2"; do
-    cls="${written%%:*}"; sprint="${written##*:}"
-    if grep -rq "class $cls" runtime 2>/dev/null; then
-      pass "$cls is present, as Sprint $sprint intended"
-    else
-      fail "$cls is missing; Sprint $sprint added it"
-    fi
-  done
-  # The fixtures are wrong on purpose and must never leave the test tree.
-  STRAY=$(grep -rlE 'class (NaNAfterConvergence|SharedCounter|WrongDerivative|IncreasingEnvelope|NonConverging)Sampler' sdk runtime platform 2>/dev/null)
-  if [ -n "$STRAY" ]; then
-    fail "a deliberately broken fixture escaped the test tree:"
-    printf '%s\n' "$STRAY" | sed 's/^/          /'
-  else
-    pass "every broken fixture is confined to tests/"
-  fi
 fi
 
 echo
@@ -85,14 +79,48 @@ else
 fi
 
 echo
-echo "=== 4. RULE-015: every contract property has a fixture that violates it ==="
+echo "=== 4. RULE-015: every assertion has a witness that violates it ==="
+# Rewritten in Sprint 06B.3, once Question 3 closed. The argument is in docs/evidence-model.md.
+#
+# This gate used to identify a witness by its syntactic form - `class X` in BrokenSamplers.kt - and
+# an assertion by which of two named files it sat in. Both identified a thing by the shape the
+# *first* subject happened to take. RULE-015 says "one deliberately wrong subject"; it names no
+# file and no shape, and never did.
+#
+# The counterexample was already in the tree. Three integration witnesses are functions and the
+# policy witnesses are vals holding SAM conversions - rewrite one as an object expression and every
+# grep's answer changes while its red set, its test and its proof do not. All were invisible here
+# while being exactly what the rule describes.
+#
+# So both columns stop asking about shape. What a manifest can honestly check is that it is
+# complete and that its names resolve; whether an artifact does any witnessing is not
+# grep-decidable and stays with review, which the closing note says.
+#
+# Calibrated before being trusted, on 2026-08-05, because a rewritten gate that has only ever been
+# seen green is the failure this project keeps building gates to prevent. Each check was shown to
+# refuse by breaking the tree one way at a time and restoring it:
+#
+#   a. an assertion defined under tests/ and left out of the manifest   -> red, names it
+#   b. a declaration naming an assertion that does not exist            -> red, names both halves
+#   c. a declaration naming a witness declared nowhere                  -> red, names it
+#   d. a witness declared under runtime/                                -> red, names it and the file
+#
+# Two of those cover holes the previous version had. In (a) the assertion was added to a file the
+# old gate did not read, so it would have passed unnoticed. In (d) the escaping witness was
+# UndampedEnvelopeSpring, which gate 2's hardcoded list did not contain and never had.
 SELFTEST=tests/java/aurora/testing/animation/ContractSelfTest.kt
-HARNESS="tests/java/aurora/testing/animation/SamplerContract.kt tests/java/aurora/testing/animation/PhysicsContract.kt"
-FIXTURES=tests/java/aurora/testing/animation/BrokenSamplers.kt
+TESTS=tests
 
 PAIRS=$(grep -oE 'assert[A-Za-z]+[[:space:]]+<-[[:space:]]+[A-Za-z-]+' "$SELFTEST" 2>/dev/null)
 DECLARED=$(printf '%s\n' "$PAIRS" | awk '{print $1}' | sort -u)
-DEFINED=$(grep -rhoE '^[[:space:]]*fun (assert[A-Za-z]+)' $HARNESS 2>/dev/null | awk '{print $2}' | sort -u)
+# Every assertion in the test tree, wherever it lives and whatever shape it is written in.
+#
+# assertRejects is excluded by name, not by location. It is the harness's inversion helper - it
+# asserts that some *other* assertion refused - so it has no subject of its own and nothing to
+# witness. Excluding one named helper is a statement about that helper; excluding a directory would
+# be the mistake this gate was just rewritten to stop making.
+DEFINED=$(grep -rhoE '\bfun (assert[A-Za-z]+)' "$TESTS" --include='*.kt' 2>/dev/null \
+            | awk '{print $2}' | grep -vx 'assertRejects' | sort -u)
 
 if [ -z "$PAIRS" ] || [ -z "$DEFINED" ]; then
   fail "found no pairing block or no assertions; the gate is looking in the wrong place"
@@ -117,71 +145,85 @@ else
     pass "every declaration names a real assertion"
   fi
 
-  # c. every named fixture must exist, unless the pair is an explicit tier exemption.
-  # The summary line is conditional: a green "every fixture exists" printed under a red one
-  # naming a missing fixture contradicts itself, and a reader skimming for green would believe
+  # c. every named witness must resolve to a declaration somewhere in the test tree, in any shape.
+  # A class, a function, an object and a val holding a lambda are representations of one role, and
+  # a gate recognising one of them would confuse a representation for the thing.
+  #
+  # The summary line is conditional: a green "every witness resolves" printed under a red one
+  # naming a missing witness contradicts itself, and a reader skimming for green would believe
   # the wrong half.
-  BAD_FIXTURES=0
+  BAD_WITNESSES=0
   while read -r LEFT _ RIGHT; do
     [ -z "${RIGHT:-}" ] && continue
     if [ "$RIGHT" = "solver-tier" ]; then
-      note "$LEFT is solver-tier and needs no fixture (RULE-015 binds the contract tier)"
-    elif ! grep -q "class $RIGHT" "$FIXTURES"; then
-      fail "$LEFT names fixture $RIGHT, which is not a class in BrokenSamplers.kt"
-      BAD_FIXTURES=$((BAD_FIXTURES + 1))
+      note "$LEFT is solver-tier and needs no witness (RULE-015 binds the contract tier)"
+    elif ! grep -rqE "\b(class|object|fun|val)[[:space:]]+$RIGHT\b" "$TESTS" --include='*.kt'; then
+      fail "$LEFT names witness $RIGHT, which is declared nowhere under $TESTS/"
+      BAD_WITNESSES=$((BAD_WITNESSES + 1))
     fi
   done <<< "$PAIRS"
-  [ "$BAD_FIXTURES" -eq 0 ] && pass "every declared fixture exists or is an explicit exemption"
+  [ "$BAD_WITNESSES" -eq 0 ] && pass "every declared witness resolves or is an explicit exemption"
+
+  # d. no witness may be declared outside the test tree.
+  #
+  # Moved here from gate 2 when that gate retired, and rewritten on the way. The witness set is
+  # derived from two declarations rather than hardcoded: every name the manifest pairs, plus every
+  # type declared in the fixture files. Adding a witness to either extends this check without
+  # anyone having to remember to - which is what the old hardcoded list failed to do for four
+  # sprints.
+  #
+  # Location is the subject here, so grepping by location is not the mistake Question 3 named.
+  # Containment *is* a property of where a thing is written. What that question forbids is
+  # inferring a witness's identity from its shape, and the set below is read from declarations.
+  FIXTURE_FILES="$TESTS/java/aurora/testing/animation/BrokenSamplers.kt"
+  FIXTURE_FILES="$FIXTURE_FILES $TESTS/java/aurora/testing/animation/WrongSprings.kt"
+  # LinearSampler is excluded: it lives among the fixtures but is the correct baseline the self
+  # test compares them against, not a deliberately wrong subject.
+  WITNESSES=$( { printf '%s\n' "$PAIRS" | awk '{print $3}'
+                 grep -hoE '^class [A-Za-z]+' $FIXTURE_FILES 2>/dev/null | awk '{print $2}'
+               } | grep -vx 'solver-tier' | grep -vx 'LinearSampler' | sort -u )
+  ESCAPED=0
+  for W in $WITNESSES; do
+    HITS=$(grep -rlE "\b(class|object|fun|val)[[:space:]]+$W\b" sdk runtime platform \
+             --include='*.kt' 2>/dev/null)
+    if [ -n "$HITS" ]; then
+      fail "witness $W is declared in production code:"
+      printf '%s\n' "$HITS" | sed 's/^/          /'
+      ESCAPED=$((ESCAPED + 1))
+    fi
+  done
+  [ "$ESCAPED" -eq 0 ] &&
+    pass "all $(printf '%s\n' "$WITNESSES" | wc -l) witnesses are confined to $TESTS/"
 fi
-note "whether each pair is actually exercised is enforced by review; grep cannot see it"
+# The honest limit of a manifest, and the reason the shape check was not replaced by a cleverer
+# one. RULE-015 also says "no fixture that nothing uses"; that a name resolves is not that it
+# witnesses, and neither half is grep-decidable.
+note "whether each pair is exercised, and whether a witness's red set is what it claims, is"
+note "enforced by review; grep can see that the manifest is complete, and nothing more"
 
 echo
-echo "=== 5. Only the solved families have samplers ==="
-# Sprint 06B.1 rewrote this gate, because it did not fail when it should have.
+echo "=== 5. Retired in Sprint 06B.3 ==="
+# "Only the solved families have samplers." Recorded rather than deleted, and the record matters
+# more here than anywhere else in this file, because this gate has the most instructive history.
 #
-# It used to count occurrences of UnsupportedOperationException( and require exactly one.
-# `samplerFor` has one throw site covering `is PhysicsSpec ->`, so adding `is SpringSpec ->
-# SpringSampler(spec)` above it took springs out of the refused set without changing the count.
-# The gate reported green while the invariant it claimed to guard had changed - which is the
-# failure this project keeps building gates to prevent.
+# It watched which families `samplerFor` refused. Sprint 06B.1 rewrote it after finding it could
+# not fail: it counted `UnsupportedOperationException(` occurrences and required exactly one, so
+# adding `is SpringSpec -> SpringSampler(spec)` above the throw took springs out of the refused set
+# without changing the count. Green while the invariant it guarded had changed. Rewritten to name
+# the families instead, it then went red exactly when Sprint 06B.2 solved decay - the gate working.
 #
-# It now checks which families are refused rather than how many throw sites exist. Sprint 06B.2
-# moved DecaySpec from the refused list to the solved one, which is the gate working as intended:
-# it went red the moment the invariant changed and had to be edited deliberately rather than
-# drifting green.
-HANDLE=runtime/java/aurora/runtime/animation/AnimationHandleImpl.kt
-SAMPLER_FOR=$(sed -n '/fun samplerFor/,/^        }/p' "$HANDLE" 2>/dev/null)
-if [ -z "$SAMPLER_FOR" ]; then
-  fail "cannot find samplerFor in $HANDLE"
-else
-  for solved in "SpringSpec:06B.1" "DecaySpec:06B.2"; do
-    family="${solved%%:*}"; sprint="${solved##*:}"
-    if printf '%s' "$SAMPLER_FOR" | grep -qE "is $family *->"; then
-      pass "$family has a sampler (Sprint $sprint)"
-    else
-      fail "$family lost its sampler; Sprint $sprint gave it one"
-    fi
-  done
-  UNAUTHORISED=0
-  for family in SnapSpec; do
-    if printf '%s' "$SAMPLER_FOR" | grep -qE "is $family *->"; then
-      fail "$family has a sampler, but no sprint has written one"
-      UNAUTHORISED=$((UNAUTHORISED + 1))
-    fi
-  done
-  # Conditional, for the reason gate 4c is: a green summary printed under a red line that
-  # contradicts it is worse than no summary at all.
-  [ "$UNAUTHORISED" -eq 0 ] && pass "no sampler for SnapSpec"
-  # The refusal must still name where each missing solver is coming from, which is what makes
-  # the failure useful rather than merely loud (RULE-003).
-  for sprint in "06B.3"; do
-    if printf '%s' "$SAMPLER_FOR" | grep -q "$sprint"; then
-      pass "the refusal names Sprint $sprint"
-    else
-      fail "the refusal does not say that Sprint $sprint brings a solver"
-    fi
-  done
-fi
+# It retires because its subject is gone rather than because it stopped mattering. Sprint 06B.3
+# found snap is a target selection followed by a spring, so SnapSpec left the AnimationSpec
+# hierarchy (ADR-009), `samplerFor` refuses nothing, and there is no refused set left to watch.
+# Both surviving halves were also inherited by something stronger: the `when` is exhaustive over a
+# sealed hierarchy with no `else`, so a family losing its sampler, or a spec kind arriving without
+# one, is now a compile error rather than a grep that has to be remembered.
+#
+# What no compiler can check is that the `else` never comes back, since adding one is legal Kotlin
+# that silently restores the hole. That is asserted instead by
+# `AnimationLifecycleTest.everySpecTheEngineCanReceiveHasASolver`, which builds one animation of
+# every kind and would fail if any were refused.
+note "gate 5 retired in Sprint 06B.3; exhaustiveness and one lifecycle test replaced it"
 
 echo
 echo "=== 6. The contract is written down ==="
@@ -202,23 +244,29 @@ else
   fail "ADR-002 does not record the 06B.0 amendment"
 fi
 fi
-for rule in RULE-015 RULE-016 RULE-017; do
+for rule in RULE-015 RULE-016 RULE-017 RULE-018; do
   if grep -q "\*\*$rule" README.md; then pass "$rule is in the README"; else fail "$rule is missing"; fi
 done
 
 echo
 echo "======================================"
+# The marker was SPRINT06B0 while this script was verify-sprint06b0.sh. Sprint 06B.3 renamed the
+# file for guarding three sprints rather than one, and the marker had been left behind naming the
+# sprint it was born in - the same "origin, not role" slip the rename existed to correct.
 if [ "$FAILURES" -eq 0 ]; then
   if [ "$DOCS_CHECKED" -eq 1 ]; then
-    echo "SPRINT06B0 PASS"
+    echo "MOTION EVIDENCE PASS"
   else
-    echo "SPRINT06B0 PASS (partial: documentation gate not run on this machine)"
+    echo "MOTION EVIDENCE PASS (partial: documentation gate not run on this machine)"
   fi
   echo
   echo "Not checked here, and deliberately so:"
-  echo "  - the snap envelope has no trajectory subject until 06B.3 (RULE-017)"
   echo "  - RULE-016 and RULE-017 are enforced by review; no script can decide either"
+  echo "  - RULE-015's other half - that a witness is exercised, and refuses where it claims to -"
+  echo "    is review's for the same reason (gate 4)"
+  echo "  - snap has no trajectory subject and never will: it is a selection and then a spring,"
+  echo "    so the spring's subject is the only one there is (ADR-009)"
   exit 0
 fi
-echo "SPRINT06B0 FAIL ($FAILURES)"
+echo "MOTION EVIDENCE FAIL ($FAILURES)"
 exit 1

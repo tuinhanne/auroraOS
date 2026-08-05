@@ -199,10 +199,15 @@ class AnimationApiTest {
     fun everyPhysicsSpecCarriesVelocityAndACompletionThreshold() {
         // Two fields are what a solver needs and a Timeline cannot express. Declared
         // now so that 06B adds solvers without changing this file.
+        //
+        // Snap left this list in Sprint 06B.3, when it stopped being a PhysicsSpec (ADR-009). It
+        // is not an omission and not a family that lost a field: a snap is a selection followed by
+        // a spring, so the spec the solver eventually receives is the SpringSpec above. Snap keeps
+        // a completionThreshold of its own, checked separately, because it carries one through to
+        // that spring rather than because a solver reads it here.
         val specs: List<PhysicsSpec> = listOf(
             SpringSpec(),
             DecaySpec(initialVelocity = 2f),
-            SnapSpec(targets = listOf(0f, 1f)),
         )
         // javaClass.simpleName, not ::class.simpleName: KClass pulls in Kotlin reflection,
         // which is not on the core_current classpath.
@@ -231,6 +236,21 @@ class AnimationApiTest {
     }
 
     @Test
+    fun aSnapSpecWithoutACompletionThresholdIsRejected() {
+        // Stated separately from the PhysicsSpec sweep above, because snap is no longer one
+        // (ADR-009) and its threshold is validated for a different reason: not so a solver can
+        // report settling, but so the value SnapFactory carries into the resulting SpringSpec was
+        // usable before it got there. A zero caught only at the far end would be reported against
+        // a spring the caller never wrote.
+        try {
+            SnapSpec(targets = listOf(0f), completionThreshold = 0f)
+            fail("a snap whose threshold can never be reached must not be constructible")
+        } catch (expected: IllegalArgumentException) {
+            // expected
+        }
+    }
+
+    @Test
     fun aDecayWithoutFrictionIsRejected() {
         try {
             DecaySpec(friction = 0f, initialVelocity = 2f)
@@ -247,7 +267,6 @@ class AnimationApiTest {
         listOf<Pair<String, () -> PhysicsSpec>>(
             "spring" to { SpringSpec(completionThreshold = 0f) },
             "decay" to { DecaySpec(initialVelocity = 2f, completionThreshold = -1f) },
-            "snap" to { SnapSpec(targets = listOf(0f), completionThreshold = 0f) },
         ).forEach { (name, construct) ->
             try {
                 construct()
@@ -314,12 +333,18 @@ class AnimationApiTest {
         assertFalse(spec.isFinished(0L, MotionSample(value = 0.3f, velocity = 0f)))
     }
 
-    @Test
-    fun aSnapUsesTheSameRestRuleAsASpring() {
-        val spec = SnapSpec(targets = listOf(0f, 1f))
-        assertTrue(spec.isFinished(0L, MotionSample(1f, 0f)))
-        assertFalse(spec.isFinished(0L, MotionSample(0.5f, 0f)))
-    }
+    // `aSnapUsesTheSameRestRuleAsASpring` retired in Sprint 06B.3.
+    //
+    // It asserted that `SnapSpec.isFinished` agreed with a spring's, which was the honest check
+    // while snap was expected to be solved as its own family. It is now a tautology with nothing
+    // to hold: a snap has no rest rule, because `SnapFactory` produces a `SpringSpec` and the
+    // spring's rule is the only one that runs (ADR-009).
+    //
+    // What it was really guarding — that a caller's completion setting survives the journey — is
+    // asserted where that journey happens, by
+    // `SnapPipelineTest.theCompletionThresholdSurvivesTheJourneyIntoTheSpring`. Recorded here
+    // rather than deleted, because an assertion that disappears with no note is indistinguishable
+    // from one nobody noticed had stopped running.
 
     @Test
     fun aDecaysNormalisedInitialVelocityIsAlwaysItsFriction() {

@@ -28,25 +28,64 @@ import org.junit.Test
  *
  * ## RULE-015 pairing
  *
- * Every contract property and the fixture that violates it. `verify-motion-evidence.sh` reads this
- * block and checks each name on the left is a real function in the harness, each name on the
- * right is a real class in `BrokenSamplers.kt`, and no `fun assert*` in the harness is missing
- * from the left column — so a property cannot be added later without declaring its fixture.
+ * Every assertion in the test tree and the witness built to violate it.
  *
- *   assertFinite                    <- NaNAfterConvergenceSampler
- *   assertDeterministic             <- SharedCounterSampler
- *   assertVelocityMatchesDerivative <- WrongDerivativeSampler
- *   assertMetricNeverIncreases      <- IncreasingEnvelopeSampler
- *   assertConvergesToOne            <- NonConvergingSampler
- *   assertOrderIndependent          <- solver-tier
+ *   assertFinite                            <- NaNAfterConvergenceSampler
+ *   assertDeterministic                     <- SharedCounterSampler
+ *   assertVelocityMatchesDerivative         <- WrongDerivativeSampler
+ *   assertMetricNeverIncreases              <- IncreasingEnvelopeSampler
+ *   assertConvergesToOne                    <- NonConvergingSampler
+ *   assertOrderIndependent                  <- solver-tier
+ *   assertTravelPreservesTheGestureVelocity <- flingForgettingFriction
+ *   assertTravelPreservesTheGestureVelocity <- springForgettingToNormalise
+ *   assertTravelPreservesTheGestureVelocity <- snapForgettingToNormalise
+ *   assertSelectsAMember                    <- selectionReturningTheCandidate
+ *   assertSelectsTheNearest                 <- selectionChoosingTheFarthest
+ *   assertIndependentOfListOrder            <- selectionBreakingTiesByListOrder
  *
- * The physics pair are exercised in `PhysicsContractTest`, where that tier lives; the pairing is
- * declared here so there is one place to read it and one for the gate to check.
+ * `verify-motion-evidence.sh` gate 4 reads this block and checks three things: that every
+ * assertion defined anywhere under `tests/` appears on the left, that nothing is declared which
+ * does not exist, and that every name on the right resolves to a declaration somewhere in the test
+ * tree. It checks nothing about *shape*.
+ *
+ * ## Why shape is not checked, which is Sprint 06B.3's answer to Question 3
+ *
+ * Until 06B.3 the gate also required each right-hand name to be a `class` in `BrokenSamplers.kt`,
+ * and built its list of assertions by grepping two named files. Both identified a thing by the
+ * form the **first** subject happened to take. The solver tier's witnesses are classes because a
+ * subject there is a `MotionSampler` and a `MotionSampler` is a class — not because RULE-015 says
+ * so. It does not: it says *one deliberately wrong subject*, and names no file and no shape.
+ *
+ * The counterexample is in this list. `selectionReturningTheCandidate` is a `val` holding a SAM
+ * conversion; write it as an `object` expression instead and every grep's answer changes while its
+ * red set, its test and what it proves do not. Three integration witnesses are plain functions.
+ * None is a class, all are witnesses.
+ *
+ * So a witness is identified by **role** — an artifact deliberately constructed to violate one
+ * named assertion, together with the declaration of which one — and class, function, object,
+ * lambda, table and generated fixture are representations of that. The argument in full is in
+ * `docs/evidence-model.md`.
+ *
+ * ## What this block cannot establish, stated rather than implied
+ *
+ * That a witness resolves is not that it witnesses. Whether each pair is actually exercised, and
+ * whether a witness's red set is what it claims, is review's — RULE-015 says *no fixture that
+ * nothing uses*, and no script can see it. Dropping the shape check gave up one real thing, a
+ * name that is a typo; requiring the name to resolve keeps that and claims nothing more.
+ *
+ * The physics pair are exercised in `PhysicsContractTest` and the integration and policy pairs in
+ * their own files, where those tiers live. The pairing is declared here so there is one place to
+ * read it and one for the gate to check.
  *
  * `assertOrderIndependent` is listed with `solver-tier` rather than omitted. RULE-015 binds the
- * contract tier, so it needs no fixture — but an exemption that showed up as an absence would be
+ * contract tier, so it needs no witness — but an exemption that showed up as an absence would be
  * indistinguishable from someone forgetting one, which is the whole failure the gate exists to
- * catch. Every assertion appears; the ones that need no fixture say why.
+ * catch. Every assertion appears; the ones that need no witness say why.
+ *
+ * `assertTravelPreservesTheGestureVelocity` appears three times, one witness per family. One would
+ * satisfy the rule. Three are declared because the claim this sprint tested is that a single
+ * invariant covers supplied, derived and selected targets, and a manifest naming only the first
+ * would hide the two subjects that established it.
  */
 class ContractSelfTest {
 

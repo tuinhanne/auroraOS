@@ -19,10 +19,10 @@ package aurora.runtime.animation
 import aurora.sdk.animation.Animation
 import aurora.sdk.animation.AnimationHandle
 import aurora.sdk.animation.AnimationListener
+import aurora.sdk.animation.AnimationSpec
 import aurora.sdk.animation.AnimationState
 import aurora.sdk.animation.DecaySpec
 import aurora.sdk.animation.Interpolator
-import aurora.sdk.animation.SnapSpec
 import aurora.sdk.animation.SpringSpec
 import aurora.sdk.animation.TimedSpec
 import aurora.sdk.time.AuroraClock
@@ -770,31 +770,41 @@ class AnimationLifecycleTest {
         }
     }
 
-    // --- physics: solved for springs, still refused for the rest ---------------
+    // --- physics: every family the engine can receive is solved ----------------
 
+    /**
+     * The refusal test, retired in Sprint 06B.3 and replaced by its opposite.
+     *
+     * It asserted that an unsolved spec fails loudly and names the sprint bringing its solver.
+     * `SpringSpec` left its list in 06B.1 and `DecaySpec` in 06B.2, each time because a solver
+     * arrived. `SnapSpec` left for a different reason: 06B.3 found that snap is a target selection
+     * followed by a spring, so it stopped being an [AnimationSpec] at all (ADR-009) and can no
+     * longer be handed to the engine for anything to refuse.
+     *
+     * With the refused set empty the old assertion has no subject, and a test with no subject is
+     * the shape of coverage that reports nothing. What replaces it guards the claim that took its
+     * place: **`samplerFor` refuses nothing, and the `when` is exhaustive rather than defaulted.**
+     *
+     * That is not a formality. Exhaustiveness is load-bearing only while no `else` branch exists —
+     * add one and the compiler stops objecting to a spec kind with no sampler, which is exactly the
+     * silent regression the original test existed to prevent. This catches it at the one place it
+     * would show.
+     */
     @Test
-    fun anUnsolvedPhysicsAnimationIsRejectedWithAMessageNamingTheSprint() {
-        // This asserted `SpringSpec` until Sprint 06B.1 gave springs a solver. The invariant
-        // changed on purpose, so the test moves to the families that still have none rather than
-        // being deleted - what it guards is that an unsolved spec fails loudly and says where its
-        // solver is coming from, and two families still need that.
-        // Decay left this list in Sprint 06B.2, when it got a sampler. Snap is the last family
-        // without one, and the test stays for it rather than being deleted.
-        val unsolved = listOf(
-            SnapSpec(targets = listOf(0f, 1f)) to "06B.3",
+    fun everySpecTheEngineCanReceiveHasASolver() {
+        val everyKind = listOf<AnimationSpec>(
+            TimedSpec(Timeline.ofMillis(100)),
+            SpringSpec(initialVelocity = 2f),
+            DecaySpec(friction = 4.6f, initialVelocity = 4.6f),
         )
-        for ((spec, sprint) in unsolved) {
-            val animator = DefaultAnimator(registry())
-            try {
-                animator.create(Animation(spec.javaClass.simpleName, spec))
-                fail("${spec.javaClass.simpleName} has no solver; the failure must be loud")
-            } catch (expected: UnsupportedOperationException) {
-                assertTrue(
-                    "the message must name the sprint bringing the solver, got: " +
-                        "${expected.message}",
-                    expected.message!!.contains(sprint)
-                )
-            }
+        for (spec in everyKind) {
+            val handle = DefaultAnimator(registry())
+                .create(Animation(spec.javaClass.simpleName, spec))
+            assertEquals(
+                "${spec.javaClass.simpleName} must reach the engine without being refused",
+                AnimationState.IDLE,
+                handle.state,
+            )
         }
     }
 

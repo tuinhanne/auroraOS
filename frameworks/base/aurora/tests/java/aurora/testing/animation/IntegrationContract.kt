@@ -17,7 +17,7 @@
 package aurora.testing.animation
 
 import aurora.sdk.animation.Animation
-import aurora.sdk.animation.DecaySpec
+import aurora.sdk.animation.PhysicsSpec
 import kotlin.math.abs
 import org.junit.Assert.fail
 
@@ -39,8 +39,20 @@ object IntegrationContract {
      * The travel a caller inferred, scaled by friction, returns exactly the velocity it was given.
      *
      * ```
-     * (to - from) · friction  =  v₀
+     * (to - from) · v_normalised  =  v_gesture
      * ```
+     *
+     * ## Why `initialVelocity` and not `friction`
+     *
+     * Sprint 06B.2 wrote this as `(to - from) · friction`, which is the same equation: `friction`
+     * **is** a decay's normalised initial velocity, by the identity 06B.0 proved. With only decay
+     * as a subject the two were indistinguishable, so the assertion was parameterised by a
+     * quantity one family happens to own.
+     *
+     * A spring has no friction, and that is what revealed it. The law was always about the
+     * normalised velocity; `friction` was one family's way of obtaining it. Generalising the
+     * signature states the same invariant in a quantity no family owns alone — it does not
+     * accommodate a second family, it stops disguising the first.
      *
      * A product rather than a quotient, on three grounds. It introduces no division, so `to == from`
      * needs no special case. It reads as a conservation law — the inferred travel, scaled back by
@@ -69,16 +81,17 @@ object IntegrationContract {
     fun assertTravelPreservesTheGestureVelocity(
         name: String,
         animation: Animation,
-        spec: DecaySpec,
+        spec: PhysicsSpec,
         gestureVelocity: Float,
     ) {
         val travel = animation.to - animation.from
-        val returned = travel * spec.friction
+        val returned = travel * spec.initialVelocity
         val scale = maxOf(abs(gestureVelocity), abs(returned), 1f)
         if (abs(returned - gestureVelocity) / scale > TOLERANCE) {
             fail(
-                "$name inferred a travel of $travel, which at friction ${spec.friction} returns " +
-                    "$returned rather than the $gestureVelocity it was given"
+                "$name settled on a travel of $travel, which at a normalised velocity of " +
+                    "${spec.initialVelocity} returns $returned rather than the $gestureVelocity " +
+                    "it was given"
             )
         }
     }

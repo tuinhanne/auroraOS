@@ -87,6 +87,23 @@ pure and `seek(0.5)` twice can return two different values. It breaks RULE-009 d
   `to` equals `from` and there is nothing to animate — which is the whole of the second question
   below, resolved as a precondition rather than as a special case.
 
+- **Amended by Sprint 06B.3.** `SnapSpec` is no longer an `AnimationSpec` at all. See ADR-009.
+
+  This ADR declared `SpringSpec`, `DecaySpec` and `SnapSpec` as physics branches on the expectation
+  that Sprint 06B would write five solvers. It wrote three. Fling turned out to be a decay with a
+  derived target, and snap turned out to be a target selection followed by a spring — so
+  `SnapFactory` hands the engine a `SpringSpec` and nothing ever samples a `SnapSpec`.
+
+  The decision this ADR records — a sealed spec with a timed and a physics branch — is unaffected,
+  and the sealing is what made the removal safe: `samplerFor`'s `when` lost its throw site and
+  stayed exhaustive, so the engine now refuses nothing and a spec kind without a sampler fails the
+  build instead.
+
+  Worth noting against the consequence recorded above that *physics specs are visible in the SDK
+  before they work*. That was deliberate, to fix their shape while it was still free to change. For
+  two of the five families the shape that got fixed was wrong, and both were found by building the
+  motion rather than by reviewing the type.
+
 ## Left open for Sprint 06B — **both answered, see ADR-008**
 
 > **The first question's premise below is wrong, and is left standing as written because the

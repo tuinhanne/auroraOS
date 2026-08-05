@@ -164,10 +164,20 @@ makes the contract stronger, and each row that has to be **changed** in the proc
 contract learned something from its first implementation.
 
 **Verified is a property of a pair, not of a clause.** It holds of `(clause, subject family)`, so
-the backlog is a matrix. Sprint 06B.1 gave the spring a trajectory subject; snap has no sampler
-until 06B.3 and its rows cannot move on the spring's evidence, even though it shares the formula.
-A matching formula is not a formula verified along a trajectory, and
-`aSnapMeasuresRestExactlyAsItsSpringWould` keeps the duplicate from drifting in the meantime.
+the backlog is a matrix. Sprint 06B.1 gave the spring a trajectory subject; snap had no sampler and
+its rows could not move on the spring's evidence, even though it shared the formula. A matching
+formula is not a formula verified along a trajectory.
+
+**Sprint 06B.3 dissolved that pair rather than completing it.** Snap turned out not to be a solver
+family at all: once a target is selected a snap *is* a spring, `SnapFactory` hands the engine a
+`SpringSpec`, and `SnapSpec` left the spec hierarchy (ADR-009). So snap's column does not move from
+pending to verified — it stops being a column, because there is no snap subject distinct from the
+spring one to verify. The duplicate the old note spoke of is gone rather than guarded, and the test
+that watched it for drift retired with it.
+
+Worth keeping the distinction that made the old note right. It was *not* correct to let snap
+inherit the spring's evidence while snap had its own formula; it *is* correct now, because it has
+no formula of its own. What changed is the subject, not the standard.
 
 ### Three things qualify "verified", and conflating any two costs a column its meaning
 
@@ -177,14 +187,34 @@ not a claim about how a motion system must be built; a later family may well add
 | layer | subject | examples |
 |---|---|---|
 | solver | a `MotionSampler` | everything in `SamplerContract` and `PhysicsContract` |
-| integration | a pipeline including its caller and its unit conversion | **none yet** |
+| integration | a pipeline including its caller and its unit conversion | `IntegrationContract`, one witness per family |
 | endpoint | the animation API as a caller observes it | 06A's endpoint-exact `valueAt`, the lifecycle tests |
+| policy | a pure rule upstream of the unit boundary | `TargetSelectionPolicy`'s three properties |
 
-The middle row is empty, and that is the finding. Sprint 06A produced endpoint evidence and
-06B.1 produced solver evidence; nothing has ever observed the two joined. It went unnoticed
-because a spring does not need it — `to` is an input, `valueAt(1) == to` was proven in 06A and the
-trajectory in 06B.1, so the chain closes with no unobserved link. A decay inserts one:
-`to = from + v₀/friction` is *derived*, and no assertion has ever crossed it.
+The middle row was empty and that was the finding. Sprint 06A produced endpoint evidence and 06B.1
+produced solver evidence; nothing had ever observed the two joined. It went unnoticed because a
+spring does not need it — `to` is an input, `valueAt(1) == to` was proven in 06A and the trajectory
+in 06B.1, so the chain closed with no unobserved link. A decay inserted one:
+`to = from + v₀/friction` is *derived*, and no assertion had ever crossed it.
+
+**Sprint 06B.2 opened the layer and 06B.3 filled it.** One assertion covers all three families:
+
+```
+(to − from) · v_normalised  =  v_gesture
+```
+
+Sprint 06B.2 wrote it as `(to − from) · friction`, which is the same equation — `friction` **is** a
+decay's normalised initial velocity — but parameterised by a quantity one family happens to own. A
+spring has no friction, and that is what revealed it. Generalising the signature to
+`PhysicsSpec.initialVelocity` states the same law in a quantity no family owns alone.
+
+That one invariant now covers a **supplied** target (spring), a **derived** one (decay) and a
+**selected** one (snap), which was the prediction 06B.3 existed to try to refute and did not.
+
+**A fourth layer arrived without being planned.** `TargetSelectionPolicy` is a pure function
+upstream of the unit boundary: it crosses no boundary, needs no pipeline and touches no sampler, so
+it is neither solver nor integration. It is listed because the layer definition above is an
+observation about the assertions that exist, and one more now exists.
 
 > **A layer that has never existed has no calibrated assertion in it.** The first sprint to open
 > one must therefore show its assertion can *reject* before treating a pass as evidence — the
@@ -211,10 +241,19 @@ where value units are converted, which is exactly the state §2's correction des
 That is why Sprint 06B.2 is about the pipeline rather than about a solver: the solver adds nothing
 to the first column, and the second column has never been touched at all.
 
-| clause | Spring | Decay | Snap | violating fixture |
+| clause | Spring | Decay | Snap | witness |
 |---|---|---|---|---|
-| §4 completion | **verified 06B.1** | verified 06B.0 | pending its own sampler | `IncreasingEnvelopeSampler`, `UndampedEnvelopeSpring` |
-| §2 convergence | **verified 06B.1** | verified 06B.0 | pending its own sampler | `NonConvergingSampler`, `WrongBranchSpring` |
+| §4 completion | **verified 06B.1** | verified 06B.0 | *no distinct subject* | `IncreasingEnvelopeSampler`, `UndampedEnvelopeSpring` |
+| §2 convergence | **verified 06B.1** | verified 06B.0 | *no distinct subject* | `NonConvergingSampler`, `WrongBranchSpring` |
+| travel preserves the gesture velocity | **verified 06B.3** | **verified 06B.2** | **verified 06B.3** | `springForgettingToNormalise`, `flingForgettingFriction`, `snapForgettingToNormalise` |
+
+**Every family is now end-to-end**, in the sense the exit criterion asked for: each has a solver
+subject and an integration subject, and no row is waiting on a sprint. Snap's two solver cells are
+italicised rather than green because they are not claims about snap — the spring cells beside them
+are the evidence, and snap has no separate thing to verify.
+
+The third row is the layer 06B.2 opened. Its three witnesses are the three ways a target is
+obtained, which is the whole content of the claim that one invariant covers them.
 
 Sprint 06B.1 closed the spring column, and the green means something because the properties were
 shown able to reject a spring **before** the real one ran. That mattered more than usual here:
@@ -222,11 +261,18 @@ shown able to reject a spring **before** the real one ran. That mattered more th
 closed form makes the metric exactly `A·e^(-ζωt)` — monotone by construction, and a property could
 have passed having examined nothing.
 
-**Snap's envelope still has no trajectory subject; the spring's now does.** What follows was
-written in Sprint 06B.0 and remains true of snap. RULE-017 in force rather than an oversight. Their metric is never-increasing because `dE/dt = -2ζωv²` along solutions of
-`ẍ + 2ζωẋ + ω²x = 0`; a hand-built oscillation is not a solution, so the metric need not fall
-along it and a failure would not distinguish a wrong metric from a wrong fixture. A genuine
-solution is the closed form, which is Sprint 06B.1.
+**Snap's envelope has no trajectory subject and never will get one.** What follows was written in
+Sprint 06B.0, when the sentence read "still has none" and named 06B.3 as the sprint that would
+supply it. RULE-017 in force rather than an oversight. Their metric is never-increasing because
+`dE/dt = -2ζωv²` along solutions of `ẍ + 2ζωẋ + ω²x = 0`; a hand-built oscillation is not a
+solution, so the metric need not fall along it and a failure would not distinguish a wrong metric
+from a wrong fixture. A genuine solution is the closed form, which is Sprint 06B.1.
+
+Sprint 06B.3 did not supply the missing subject. It removed the need for one: a snap becomes a
+`SpringSpec` before anything samples it, so the spring's trajectory is the only trajectory there
+is. The gap closes by the question being wrong rather than by the work being done — which is a
+different outcome from the row being filled, and is recorded as such so nobody later reads a
+dissolved gap as a discharged one.
 
 What the envelope does have is `PhysicsContractTest`, which checks the **formula** algebraically
 on hand-built samples: zero only at rest on target, symmetric in overshoot and undershoot,
@@ -235,7 +281,22 @@ pin the properties the monotonicity argument needs in order to be about the righ
 are not a substitute for running it along a trajectory.
 
 **Sprint 06B.1 was the first real test of the spring envelope, and it passed.** The algebraic
-checks stay, because they are what pins the formula while snap still waits for a trajectory.
+checks stay. They are what pins the formula to the right quantity, and that job does not end when a
+trajectory subject arrives — the monotonicity argument needs both halves.
+
+### 7.0 Named gaps: what no assertion in this contract observes
+
+A row here is a question the framework cannot yet answer, recorded so nobody has to think of it
+again. An empty row with a reason beside it is not a shortcoming — a gap that stays in a sprint's
+prose is how the 06B.0 convergence claim survived three sprints unexamined.
+
+| gap | what is unobserved | why it is not merely missing |
+|---|---|---|
+| **projection provenance** | where `candidate` comes from — the position a gesture is predicted to land on, which `SnapFactory` takes as an input | Sprint 06B.3 Question 2 established the projection is the *caller's*, because a factory owning it would hold semantics no contract observes and the policy below it would be defined in terms of one family's physics. So the rule is correct and the quantity is unverified: nothing in this contract can say whether the caller's projection is any good, and a snap onto the nearest target of a badly projected candidate is precisely accurate about the wrong place. |
+| **unit boundary crossing for `TimedSpec`** | the timed family has no integration-layer subject | `TimedSpec` carries no velocity to normalise, so the invariant that covers the other three has nothing to say about it. Whether that means it needs none, or needs a different one, has never been asked. |
+
+Both are gaps in *coverage*, not in the assertions that exist. Neither can be closed by making an
+existing property stricter, which is what distinguishes them from the backlog matrix above.
 
 ### 7.1 Order of investigation when a backlog clause first goes red
 

@@ -35,8 +35,18 @@ import aurora.sdk.time.Timeline
  * Splitting the two here means Sprint 06B adds solvers as new files and changes nothing that
  * already exists. See ADR-002.
  *
- * Sprint 06A implements [TimedSpec] only. A [PhysicsSpec] is accepted by the type system and
- * rejected loudly by the engine, in a message naming the sprint that will implement it.
+ * Sprint 06A implemented [TimedSpec] only, and a [PhysicsSpec] was accepted by the type system
+ * then rejected loudly by the engine in a message naming the sprint that would implement it. That
+ * arrangement ended in Sprint 06B.3: **every branch of this hierarchy now has a solver, and
+ * `AnimationHandleImpl.samplerFor` refuses nothing.**
+ *
+ * The refusal was not replaced by a weaker guarantee. It was replaced by a stronger one — adding a
+ * branch here without a sampler makes that `when` non-exhaustive and fails the build, rather than
+ * compiling and throwing when a caller happens to try it.
+ *
+ * `SnapSpec` is the reason the hierarchy has the branches it has rather than one more. Sprint
+ * 06B.0 expected it here as a fourth solver family; 06B.3 found it is a target selection followed
+ * by a spring and moved it out entirely. See ADR-009.
  */
 sealed interface AnimationSpec {
 
@@ -324,36 +334,43 @@ data class DecaySpec(
         kotlin.math.abs(1f - sample.value)
 }
 
-/** Motion settling onto the nearest of several resting positions. */
+/**
+ * Where a snap is allowed to settle, and the spring that carries it to whichever is chosen.
+ *
+ * **Not an [AnimationSpec], and that is Sprint 06B.3's result rather than an omission.** See
+ * ADR-009.
+ *
+ * Sprint 06B.0 placed this in [PhysicsSpec] on the expectation that snap would be a fourth solver
+ * family. Sprint 06B.3 refuted that: once a target is selected a snap **is** a spring, so
+ * `SnapFactory` selects and then delegates, and what reaches the engine is a `SpringSpec`. No
+ * sampler is ever built from this type, `samplerFor` never receives one, and nothing evaluates
+ * `isFinished` on it.
+ *
+ * Staying in the hierarchy would have obliged it to carry three inherited members — an
+ * `initialVelocity` nothing reads, a `completionMetric` no pipeline reaches, and an `isFinished`
+ * derived from them — kept alive only by the interface that required them. That is the same
+ * mistake this sprint corrected twice already: a thing described by its expected origin rather
+ * than by the role it turned out to have.
+ *
+ * So this is an **input to `SnapFactory`**: a selection problem plus the settling behaviour to
+ * apply once the selection is made. It describes a motion no more than a gesture does.
+ */
 data class SnapSpec(
     val targets: List<Float>,
     val spring: Spring = MotionTokens.SPRING_SNAPPY,
-    override val initialVelocity: Float = 0f,
-    override val completionThreshold: Float = 0.001f,
-) : PhysicsSpec {
+    /**
+     * How small the resulting spring's distance from rest must get before the motion counts as
+     * over. Carried through [SnapSpec] unchanged and applied to the `SpringSpec` that selection
+     * produces, so a caller sets completion once and does not have to know that a snap becomes a
+     * spring on the way to the engine.
+     */
+    val completionThreshold: Float = 0.001f,
+) {
 
     init {
         require(targets.isNotEmpty()) { "a snap spec needs at least one target to snap to" }
         require(completionThreshold > 0f) {
             "completionThreshold must be positive; $completionThreshold would never be reached"
         }
-    }
-
-    /**
-     * The same envelope a spring uses, because once a target is chosen a snap **is** a spring.
-     *
-     * Duplicated rather than shared. Extracting it would mean a base class or a helper that only
-     * two specs use and that would have to be widened the moment a third family measures rest
-     * differently — the abstraction-with-no-variation this sprint declined to build. If a fourth
-     * family arrives wanting the same formula, that is when it earns a home of its own.
-     *
-     * Whether snap needs a sampler at all is left to Sprint 06B.3, after the spring exists and
-     * how general it turned out can be seen.
-     */
-    override fun completionMetric(sample: MotionSample): Float {
-        val omega = kotlin.math.sqrt(spring.stiffness)
-        val x = 1f - sample.value
-        val scaledVelocity = sample.velocity / omega
-        return kotlin.math.sqrt(x * x + scaledVelocity * scaledVelocity)
     }
 }

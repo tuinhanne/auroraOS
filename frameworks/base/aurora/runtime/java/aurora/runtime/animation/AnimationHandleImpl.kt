@@ -24,7 +24,6 @@ import aurora.sdk.animation.AnimationState
 import aurora.sdk.animation.DecaySpec
 import aurora.sdk.animation.MotionSample
 import aurora.sdk.animation.MotionSampler
-import aurora.sdk.animation.PhysicsSpec
 import aurora.sdk.animation.SpringSpec
 import aurora.sdk.animation.TimedSpec
 import aurora.sdk.event.Disposable
@@ -274,13 +273,24 @@ class AnimationHandleImpl(
 
     private companion object {
 
+        /**
+         * Every spec the engine can receive now has a sampler, so this refuses nothing.
+         *
+         * It threw for three sprints, in a message naming the sprint that would bring the missing
+         * solver. The last one it was waiting for never arrived and never will: Sprint 06B.3 found
+         * that snap is a target selection followed by a spring, so `SnapSpec` left the spec
+         * hierarchy entirely rather than gaining a solver, and the `when` became exhaustive with
+         * nothing left to reject (ADR-009).
+         *
+         * The absence of a throw site is now load-bearing. Adding a spec kind to [AnimationSpec]
+         * without a sampler makes this `when` non-exhaustive and fails the build — which is a
+         * stronger guard than the exception was, and is why `verify-motion-evidence.sh` retired the
+         * gate that used to watch which families were refused here.
+         */
         fun samplerFor(spec: AnimationSpec): MotionSampler = when (spec) {
             is TimedSpec -> TimedSampler(spec)
             is SpringSpec -> SpringSampler(spec)
             is DecaySpec -> DecaySampler(spec)
-            is PhysicsSpec -> throw UnsupportedOperationException(
-                "${spec.javaClass.simpleName} has no sampler yet; snap arrives in Sprint 06B.3"
-            )
         }
     }
 }
