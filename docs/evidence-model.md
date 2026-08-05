@@ -120,6 +120,69 @@ It standardises how evidence is gathered, how it is read, and when it is strong 
 assertion could keep. Deciding what to ask remains design work, and the named gaps in §7 are the
 only mechanism that carries a question forward once someone has thought of it.
 
+**It cannot decide a question whose production subject does not yet exist.** Before production
+creates a context in which competing answers differ, every answer is observationally equivalent —
+and no amount of evidence separates them, because there is nothing for evidence to be about.
+
+Sprint 06C.0 met this and it is worth recording precisely, because it looks like a shortage of
+evidence and is not one. The sprint asked whether continuity across a replacement boundary is a
+promise the framework makes. It found the intent stated (`AnimationService`: *"Interruption is the
+point"*), the carrier built (`AnimationHandle.velocity`, published every frame), the consumer built
+(`SpringFactory.springTo`), and **nothing joining them** — no caller outside `tests/` invokes any
+factory, and the handle's velocity has no reader anywhere in the tree. Not one service interface in
+`aurora.sdk.service` has an implementation.
+
+So three answers remain compatible with every observation the repository can make:
+
+| answer | what would distinguish it |
+|---|---|
+| interruption is a first-class capability | a feature that replaces a live motion and needs the runtime's help |
+| interruption is an implementation detail | a feature that replaces a live motion and does it unaided |
+| interruption is not needed at all | features that ship and never replace one |
+
+**All three require a feature to exist.** The distinguishing observation is not missing from the
+harness; it is missing from the world the harness observes. That is a different situation from a
+named gap — a gap is a question this contract cannot *yet* answer, and this is a question that has
+no domain in which to be asked.
+
+The consequence for planning is the one 06C.0 acted on: an evidence sprint cannot be opened to
+create the subject that would make it decidable, because a subject built for that reason carries
+the answer it was built to support. Production has to arrive first, for its own reasons.
+
+### Recorded, not answered: what the 06C.0 principle is really about
+
+Sprint 06C.0's plan states a constraint it did not derive from a failure, because the failure has
+never happened here — the sprint avoided it rather than suffering it:
+
+> No production code may exist whose only purpose is to create a subject for an assertion.
+
+Whether that is the hazard or a symptom of a deeper one is **open**. Two candidates, and they
+differ in what they would forbid:
+
+| candidate | forbids |
+|---|---|
+| a subject may not exist solely because an assertion wanted one | building the artifact an assertion needs |
+| **evidence may not determine the ontology of production** | that, and also a state added so an assertion has a state, an API added so a witness has an API, a lifecycle added so a contract has a lifecycle |
+
+Under the second reading the first is one instance of three or more, and a rule phrased as the
+first would be aimed one level below the thing worth naming.
+
+Recorded here rather than raised to a RULE, and **the deferral is not based on the number of
+observed instances.** This repository has introduced rules before the first or only implementation
+instance: RULE-015, RULE-016 and RULE-017 arrived in one commit with the contract they govern,
+RULE-017 from a single sprint's experience, and RULE-018 was written before the layer it governs
+existed — for the reason §7.1 of the motion contract gives, that when a rule is written matters
+more than what it says, because one written afterwards reads as a rescue of whatever was in front
+of its author.
+
+That is a description of precedent, not a standard. It says what has been done here, and leaves
+open that a later sprint may have reason to do otherwise.
+
+The reason to wait is the other precedent. A rule written before its subject has been aimed at the
+wrong hazard in this repository once already — the Taylor cutoff, where the failure mode was seen
+clearly and the thing generalised from it was not the thing that needed forbidding. Which of the
+two candidates above is the hazard is exactly that question, and nothing here answers it.
+
 ---
 
 **The question below was relocated from the Sprint 06B.3 spec unchanged; the answer was written
