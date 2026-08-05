@@ -50,6 +50,7 @@ CLASSES=(
   aurora.runtime.animation.SpringSamplerTest
   aurora.runtime.animation.TargetSelectionPolicyTest
   aurora.runtime.time.TimeInfrastructureTest
+  aurora.runtime.volume.DefaultVolumeServiceTest
   aurora.sdk.AuroraVersionTest
   aurora.sdk.animation.AnimationApiTest
   aurora.sdk.design.DesignTokensTest
