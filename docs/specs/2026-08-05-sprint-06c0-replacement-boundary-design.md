@@ -246,6 +246,101 @@ predicts a named gap.
 
 ---
 
+## Task 1's result, recorded 2026-08-05 — **C, no production subject**
+
+Executed in the plan's order, and the order mattered: steps 1–3 fixed what a subject would look
+like before step 4 was allowed to produce candidates.
+
+### The principle the task was run under
+
+> **Presence is not responsibility.** An API call is evidence of responsibility only if it performs
+> the boundary Question 0 is about.
+
+Applied because a grep returns candidates, not conclusions. Five callers of `springTo` that all
+pass `0f` are five pieces of evidence for C, not against it.
+
+### Step 1 — both documents *describe* continuity; neither *declares* a replacement
+
+`AnimationService.springTo` takes `initialVelocity` as a **parameter the caller supplies**. It takes
+no handle, reads no running animation, and has no method that ends one motion and begins another.
+`cancelAll()` cancels; it hands nothing over.
+
+**And the case the SDK actually serves is the other one.** `GestureSample.velocity` is *"the input a
+spring needs to continue the motion after the finger lifts"* — finger → spring. Every mechanism that
+exists serves that. The sentence naming this sprint's boundary is one clause of one KDoc:
+
+```
+AnimationService.kt:33   "a swipe reverses, a second touch lands mid-flight"
+                          └── animation → animation. Served by nothing.
+```
+
+So the intent covers two cases, and the SDK supplies a carrier for exactly one of them.
+
+### Step 2 — a replacement is expressible, and only as four separate caller-side calls
+
+```kotlin
+val v = old.velocity        // a query with no consumer anywhere (step 4)
+val x = old.value
+old.cancel()
+animator.play(SpringFactory.springTo(name, x, target, v))
+```
+
+Nothing in the SDK or the runtime composes those four. `Animator` makes handles; `AnimationHandle`
+runs one. The sequence is legal, undocumented, and unnamed.
+
+### Step 3 — all three factories name the velocity after the gesture
+
+| factory | parameter | its KDoc |
+|---|---|---|
+| `SpringFactory.springTo` | `gestureVelocity` | *"continuing a gesture that ended at [gestureVelocity]"* |
+| `FlingFactory.fling` | `gestureVelocity` | *"A decay released at [gestureVelocity]"* |
+| `SnapFactory.snapTo` | *(delegates)* | builds through `SpringFactory` |
+
+**This is the recurring shape a third time.** `DecaySpec.friction` was one family's way of naming the
+quantity a law was about; `class … : MotionSampler` was one layer's way of writing a witness; and
+`gestureVelocity` is one *source's* way of naming an input. A velocity arriving from a cancelled
+execution is not a gesture velocity, and every signature that could accept it says otherwise.
+
+Presence is not responsibility: three factories accept a velocity, and not one of them contemplates
+this boundary.
+
+### Step 4 — the search, and its two surprises
+
+```bash
+git grep -l "SpringFactory\|FlingFactory\|SnapFactory" -- '*.kt' | grep -v /tests/
+git grep -n "\.velocity" -- '*.kt'
+```
+
+**No caller outside `tests/` calls any factory.** The six files the first command returns mention
+the names in KDoc; the only cross-file call in the tree is `SnapFactory.kt:80` →
+`SpringFactory.springTo`, which composes two factories at construction time and involves no live
+execution.
+
+**And nothing anywhere reads `AnimationHandle.velocity`.** Every `.velocity` in the repository —
+production and test — is `sampleAt(…).velocity`, a *sample's* velocity, inside the solver domain.
+The handle's query has **zero consumers in the entire tree**, and did before this sprint noticed.
+
+That was not predicted. It makes C stronger than *"no caller has been written yet"*: the quantity the
+stated intent requires is computed on every frame, published on the public API, and read by nobody.
+
+### The repository already said so, in its own voice
+
+`FlingFactory`'s KDoc, written in Sprint 06B.2:
+
+> "`AnimationService.fling` was the expected home, but **`AnimationService` has no implementing class
+> at all — `springTo` was declared in 06A and never implemented**"
+
+### Answer
+
+**C — no production subject exists.** Per the header principle this is recorded as *nobody owns
+continuity yet*, and **not** as *the caller owns it*: there is no artifact that could be wrong.
+
+**Task 2 does not open.** The gate requires A or B.
+
+**The §7 prediction held**, and it is the only one this sprint made that did.
+
+---
+
 ## 6. Question 3 — who owns continuity? *(gated)*
 
 **This question may not be opened unless Questions 0–2 answer that continuity is a promise the
