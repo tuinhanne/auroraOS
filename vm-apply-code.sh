@@ -71,6 +71,39 @@ for p in "${PATHS[@]}"; do
   fi
 done
 
+echo
+echo "=== Applying upstream patches (ADR-011) ==="
+# Patches are not rsynced into the tree; they are applied to it. The staged copy is the one that
+# just arrived from the workstation, so this always uses what the repository says rather than
+# whatever a previous run left behind.
+#
+# apply-patches.sh restores every file a patch touches from its own project's git before applying,
+# so running this on an already-patched tree produces the same result as running it on a clean one.
+PATCH_SRC="$STAGING/patches"
+PATCH_DIR=/mnt/build/patches
+APPLY="$LINEAGE_DIR/frameworks/base/aurora/tools/apply-patches.sh"
+if [ ! -d "$PATCH_SRC" ]; then
+  echo "  (no patches/ in the archive - workstation has not synced one)"
+elif [ ! -f "$APPLY" ]; then
+  echo "  ERROR: $APPLY not found; frameworks/base/aurora synced before its tools existed?"
+  exit 1
+else
+  # Replaced wholesale rather than merged, so nothing can accumulate here: this directory is a
+  # cache of the repository, refreshed every sync, and never a place a patch can survive being
+  # deleted upstream. The gate reads it, since patches never enter the AOSP tree itself.
+  rm -rf "$PATCH_DIR"
+  cp -a "$PATCH_SRC" "$PATCH_DIR"
+  echo "  staged at $PATCH_DIR"
+
+  bash "$APPLY" "$LINEAGE_DIR" "$PATCH_DIR"
+  RC=$?
+  if [ "$RC" -ne 0 ]; then
+    echo "  ERROR: a patch did not apply. The tree is left as it stands; fix the patch, do not"
+    echo "         edit the tree - ADR-011 part 3."
+    exit 1
+  fi
+fi
+
 rm -rf "$STAGING"
 echo
 echo "=== APPLY_DONE_OK ==="

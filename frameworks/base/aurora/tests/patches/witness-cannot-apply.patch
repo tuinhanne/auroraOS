@@ -1,0 +1,22 @@
+Aurora witness, RULE-018. Deliberately unapplicable.
+========================================================================
+
+This patch exists to be refused. `verify-patches.sh` gate 2 requires it to fail, because a gate
+nobody has watched reject is indistinguishable from a gate that accepts everything, and its first
+green would carry no information.
+
+It targets a file that is not in any AOSP checkout, so it fails for a reason that cannot drift:
+upstream can move whatever it likes and this will keep being refused.
+
+It lives here rather than under `patches/` because everything under `patches/` gets applied.
+A witness in the applied set would be a patch the build tries to use.
+
+diff --git a/aurora/witness/nothing-here.txt b/aurora/witness/nothing-here.txt
+index 1111111..2222222 100644
+--- a/aurora/witness/nothing-here.txt
++++ b/aurora/witness/nothing-here.txt
+@@ -1,3 +1,3 @@
+ this file does not exist in any checkout
+-and this line is not in it either
++so no tree can contain the context this hunk needs
+ which is the whole point

@@ -12,7 +12,11 @@ if (-not (Test-Path $GCLOUD)) { throw "gcloud not found at $GCLOUD" }
 
 # Top-level trees to sync. These must match the PATHS array in vm-apply-code.sh
 # on the VM, otherwise files arrive on the VM but are never applied to the tree.
-$TREES = @("device", "frameworks")
+#
+# `patches` is not one of those PATHS and is deliberately absent from it: it is not
+# rsynced into the AOSP tree, it is staged and then applied to it. ADR-011 - the
+# checkout consumes patches, it does not contain them.
+$TREES = @("device", "frameworks", "patches")
 
 Write-Host "==> Packing $($TREES -join ', ') (excluding .git)" -ForegroundColor Cyan
 if (Test-Path $ARCHIVE) { Remove-Item $ARCHIVE -Force }
