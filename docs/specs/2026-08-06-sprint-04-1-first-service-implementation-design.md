@@ -102,8 +102,13 @@ precisely this situation:
 > "On a device most subscribers must run on the main thread, but this module has no looper and must
 > not have one. The dispatcher is the seam."
 
-With threading covered, all seven members reduce to **one** thing: a source of audio state that can
-be read, written and observed. One interface answers all of them.
+With threading covered, all seven members reduce to **one missing capability**: a source of audio
+state that can be read, written and observed.
+
+**Stated as a capability, not as an interface**, and the correction matters more than it looks. *One
+interface answers all seven* has already chosen a shape, and choosing it here would leave Task 2
+with nothing to decide but a name. What Task 1 observed is that the shortfall is singular; what the
+smallest artifact carrying it should be is ADR-010's question.
 
 ### `ServiceProvider`'s sentence is descriptive, not binding — and Task 2 must say so
 
@@ -146,9 +151,11 @@ B   source ──raw─────────► VolumeService ──normalise
 C   source ──raw─────────► VolumeService ──raw────────► UI        open, contradicts levelOf's Float
 ```
 
-The source must expose steps. What remains open is only whether normalisation happens in the
-service or above it — and `levelOf` returning `Float` already answers most of that. Task 3 confirms
-or refutes.
+The source must carry enough information for `stepCountOf` to remain derivable — which is a
+constraint on information content, not on shape: separate accessors, a snapshot type and a
+per-stream state object all satisfy it equally. What remains open is only whether normalisation
+happens in the service or above it, and `levelOf` returning `Float` already answers most of that.
+Task 3 confirms or refutes.
 
 **Question 1 is untouched by Task 1**, deliberately: it is answered by writing the listener list,
 which is Task 3's work.
