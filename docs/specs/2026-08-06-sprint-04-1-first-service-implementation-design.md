@@ -65,6 +65,96 @@ which is precisely why Question 0 exists.
 
 ---
 
+## Task 1's result, recorded 2026-08-06 — **B, exactly one seam**
+
+No production file was written. What follows is what the SDK contains, member by member.
+
+### A is refuted: the shipped abstractions supply none of the seven
+
+| member | what it needs | what `aurora.sdk` + `aurora.runtime` offer |
+|---|---|---|
+| `levelOf(stream)` | current level per stream | nothing |
+| `setLevel(stream, level)` | write a level | nothing |
+| `stepCountOf(stream)` | step count per stream | nothing |
+| `isMuted(stream)` | mute state | nothing |
+| `setMuted(stream, muted)` | write mute | nothing |
+| `activeStream` | which stream the hardware keys drive | nothing |
+| `addOnVolumeChangedListener` | change notification from any source, keys included | nothing that **originates** one |
+
+The whole SDK is thirty-five files: animation, design tokens, an event bus, seven service
+interfaces, and time. **Not one of them reads or writes any device state.** `AuroraEvent` is an
+empty marker interface with no volume event declared, so the bus can carry a notification but
+cannot produce one. `AuroraContext.hostContext()` is typed `Object` and reaching through it needs
+an `android.` import, forbidden permanently in `runtime` and until Sprint 03 in `platform`.
+
+Zero of seven. A is not close.
+
+### C is refuted, and by a seam that already exists
+
+C would hold if more than one abstraction were missing. The obvious second candidate is threading:
+volume changes arrive on whatever thread the platform delivers them on, listeners mostly want the
+main thread, and `runtime.contract` forbids `Handler(`, `Looper` and `Thread.sleep` outright.
+
+**That seam is already built.** `AuroraDispatcher` is a `fun interface` in `aurora.sdk.event`, with
+`IMMEDIATE` for host tests and `QueuedDispatcher` for controlled draining, and its KDoc describes
+precisely this situation:
+
+> "On a device most subscribers must run on the main thread, but this module has no looper and must
+> not have one. The dispatcher is the seam."
+
+With threading covered, all seven members reduce to **one** thing: a source of audio state that can
+be read, written and observed. One interface answers all of them.
+
+### `ServiceProvider`'s sentence is descriptive, not binding — and Task 2 must say so
+
+> "the implementations live in `aurora.platform`"
+
+Read literally it forbids B, because B puts the service's *logic* in `runtime` with only the
+*source* in `platform`. But the pattern that same KDoc prescribes two paragraphs later is B exactly:
+
+> "define the interface in the layer that needs it, implement it in the layer that can"
+
+And `ServiceProvider` **is** that pattern — declared in `aurora.runtime`, implemented in
+`aurora.platform`. RULE-007 says the same thing normatively. So the sentence describes the expected
+case, a service that wraps Android directly, and is not a rule about every part of every service.
+
+**This must be stated in Task 2's ADR rather than left to inference**, or the next reader finds a
+service implementation in `runtime` and a document saying they live in `platform`, with nothing
+reconciling them. That is the shape of defect 06C.0 spent its Task 1 on.
+
+### What B can build today, and what it cannot
+
+| artifact | layer | buildable now |
+|---|---|---|
+| the seam interface | `aurora.runtime` | **yes** |
+| `DefaultVolumeService` — clamping, normalisation, listener list | `aurora.runtime` | **yes** |
+| a fake source | `tests/` | **yes** |
+| host tests for all seven members | `tests/` | **yes** |
+| the Android-backed source | `aurora.platform` | **no — Sprint 03** |
+
+So B delivers a working, tested `VolumeService` on the host and leaves exactly one class waiting on
+a sprint that was already blocking everything else.
+
+### Question 2 is narrowed to two architectures, not three
+
+`stepCountOf(stream)` is on `VolumeService`, so the service must be able to answer it. A source that
+hands over only normalised levels cannot support that member at all.
+
+```
+A   source ──normalised──► VolumeService          refuted: stepCountOf has no answer
+B   source ──raw─────────► VolumeService ──normalised──► UI       open
+C   source ──raw─────────► VolumeService ──raw────────► UI        open, contradicts levelOf's Float
+```
+
+The source must expose steps. What remains open is only whether normalisation happens in the
+service or above it — and `levelOf` returning `Float` already answers most of that. Task 3 confirms
+or refutes.
+
+**Question 1 is untouched by Task 1**, deliberately: it is answered by writing the listener list,
+which is Task 3's work.
+
+---
+
 ## 3. Question 1 — is `VolumeService`'s observer deliberate, or unfinished?
 
 > **Is `VolumeService` intentionally different from every other observable surface in the SDK, or
