@@ -50,11 +50,15 @@ in `aurora.platform`.** Working name `VolumeSource`.
 - **Only the source implementation lives in `aurora.platform`**, and it is the one artifact this
   sprint cannot build — `platform.contract` forbids `android.` until Sprint 03.
 
-### `ServiceProvider`'s sentence, stated rather than left to inference
+### The sentence about where implementations live, stated rather than left to inference
 
-`ServiceProvider`'s KDoc says *"the implementations live in `aurora.platform`"*. Read literally that
-forbids this decision, and the reconciliation must be written down or the next reader finds a
-service implementation in `runtime` and a document saying otherwise:
+*"The implementations live in `aurora.platform`"* appears in **two** documents, not one —
+`ServiceProvider`'s KDoc and `AuroraService`'s, which says it while explaining why the interfaces
+sit in the SDK. Task 3 found the second while writing against it. What follows narrows both; there
+is no third site.
+
+Read literally the sentence forbids this decision, and the reconciliation must be written down or
+the next reader finds a service implementation in `runtime` and a document saying otherwise:
 
 **The sentence describes the expected case — a service that wraps Android directly — and is not a
 rule about every part of every service.** The pattern the same KDoc prescribes two paragraphs later
