@@ -408,6 +408,14 @@ It can fail, and Task 2 is what would fail it: an existing caller that already p
 replacement, or a signature on a shipping type that would obviously carry the velocity if anyone
 wrote it. Either would make the subject real and open Question 3.
 
+**Held, 2026-08-05.** No caller outside `tests/` invokes any factory; the only cross-file call in
+the tree composes two factories at construction time. Task 1 also produced evidence the prediction
+did not ask for and which points the same way: `AnimationHandle.velocity` has zero readers in the
+whole repository. The sprint ends in a named gap.
+
+Three predictions, two refuted and one held — and the two that died were worth more, because each
+took a wrong framing of the sprint with it.
+
 ---
 
 ## 8. What this sprint will not do
@@ -496,11 +504,67 @@ outcomes.
 
 ---
 
-## 12. Draft named gap, if that is the outcome
+## 12. The named gap, as it goes into the contract
 
-Written now so that Task 3 has something to sharpen rather than something to invent, and so the
-sprint's result is legible even if it produces nothing else.
+Drafted before Task 1 so the sprint had something to sharpen rather than invent. **Task 1 made it
+stronger than the prediction it was written on**, and the two findings below are why: the draft
+argued from design, and the row now rests on two observations that hold whatever anyone concludes.
+
+### What Task 1 added
+
+**The chain is broken at exactly one link, and the link is nameable.**
+
+```
+AnimationHandleImpl        velocity = sample.velocity * range        computed every frame
+        │
+        ▼
+AnimationHandle.velocity   public API, value units per second        carrier exists
+        │
+        ✗                  zero readers in the entire tree           ← the break
+        │
+        ▼
+SpringFactory.springTo(…, gestureVelocity, …)                        consumer exists, unfed
+```
+
+Both ends are built, they agree on units, and nothing joins them. That is an observation, not an
+inference, and it is what raises the row above *"nobody has written this caller yet"*.
+
+**The one signature that could accept it is named after a source, not a role.** `gestureVelocity`
+in all three factories, with KDoc binding it to a gesture. Recorded as an observation about naming
+and **not as a proposal to rename anything** — the name is correct for every caller that exists
+today. It is recorded because this repository has now watched the same failure mode three times:
+
+| what was named after | what it obscured | sprint |
+|---|---|---|
+| `DecaySpec.friction` — one family's quantity | the law was about initial velocity | 06B.2 → 06B.3 |
+| `class … : MotionSampler` — one layer's shape | a witness is defined by role | 06B.3 |
+| `gestureVelocity` — one source | the role is *initial velocity of this motion*, whatever produced it | observed here |
+
+Each time, **origin obscured role**, and each time it took a second subject to see it. If a
+replacement API ever arrives, this is the name that will be under pressure — which is the reason to
+write it down now, while nothing depends on the answer.
+
+### The row
 
 | gap | what is unobserved | why it is not merely missing |
 |---|---|---|
-| **velocity at a replacement boundary** | what carries from a cancelled execution to the one replacing it. Position is promised by `cancel()` and asserted at the endpoint layer; velocity survives on the handle, is expressible as `PhysicsSpec.initialVelocity`, has agreeing units at both ends, and is promised by nothing that ships. | It cannot be closed by strengthening an existing assertion, because no assertion has a *pair* of executions as its subject. The intent is not missing — `AnimationService` states it under the heading *"Interruption is the point"*, and `GestureService` carries a velocity for that stated purpose — but it lives on the one layer with no implementation, while `Animator` below it assigns the same job to the caller and no document reconciles the two. A replacement that drops the velocity passes every layer this contract reaches and is visibly wrong on a device. |
+| **velocity at a replacement boundary** | what carries from a cancelled execution to the one replacing it. Position is promised by `cancel()` — *"should stay where the user last saw it"* — and asserted at the endpoint layer since 06A. Velocity survives on the handle, is published in value units per second, is expressible as `PhysicsSpec.initialVelocity`, and is promised by nothing that ships. | It cannot be closed by strengthening an existing assertion, because no assertion has a *pair* of executions as its subject. The intent is not missing: `AnimationService` states it under the heading *"Interruption is the point"* and `GestureService` carries a velocity for that stated purpose — but that layer has no implementation, `Animator` below it assigns the job to the caller, and no document reconciles the two. **Sprint 06C.0 established that no production subject carries it: no caller outside `tests/` invokes any factory, and `AnimationHandle.velocity` has zero readers in the entire tree.** So the carrier is built and unread, and the consumer is built and unfed. A replacement that drops the velocity passes every layer this contract reaches and is visibly wrong on a device. |
+
+### What this row does not say
+
+It says **no production subject exists**. It does not say the caller owns nothing, and it assigns
+responsibility to nobody — Sprint 06C.0 answered *does a subject exist*, and never reached *who
+should own one*. Runtime, caller and a continuation layer all remain open, and spec §6 holds them
+unranked for whichever sprint opens Question 3.
+
+Reading this row as *the caller owns it* would convert an observation into a decision the evidence
+does not support, and would close three options on the strength of a gap.
+
+### Where the unclosed question now lives
+
+Question 3 was never opened, and it does not stay here. It is carried by the contract row itself,
+which says in the contract's own voice that ownership is unassigned and that three branches remain.
+Spec §6 keeps them unranked for whichever sprint opens it.
+
+That is the whole mechanism §7.0 exists for: the question survives without anyone having to
+remember it, in the document a later sprint will already be reading.

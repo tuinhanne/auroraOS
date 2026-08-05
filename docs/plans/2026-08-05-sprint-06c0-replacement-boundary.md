@@ -135,13 +135,16 @@ If no:
 
 ## Task 3: close
 
-- [ ] Exactly one of: the named gap added to `motion-sampler-contract.md` §7.0 (draft ready in spec
-      §12), **or** the ADR from Task 2. Not both, not neither.
-- [ ] The surviving prediction from spec §7 marked held or refuted, with the evidence beside it —
-      the prediction is *no production subject exists yet, and this sprint ends in a named gap*
-- [ ] Any question this sprint opened and did not close relocated to where it belongs, not left in
-      the plan. 06B.3 moved Question 3 into `docs/evidence-model.md` for exactly this reason
-- [ ] Verify (below), squash, push
+- [x] Exactly one of: the named gap added to `motion-sampler-contract.md` §7.0 (draft ready in spec
+      §12), **or** the ADR from Task 2. Not both, not neither. — **named gap**, third row of §7.0,
+      strengthened by Task 1's two findings before it moved
+- [x] The surviving prediction from spec §7 marked held or refuted, with the evidence beside it —
+      **held**; recorded in spec §7 with what Task 1 found that it had not asked for
+- [x] Any question this sprint opened and did not close relocated to where it belongs, not left in
+      the plan. 06B.3 moved Question 3 into `docs/evidence-model.md` for exactly this reason —
+      Question 3 is carried by the contract row, which states in the contract's own voice that
+      ownership is unassigned and three branches remain
+- [x] Verify (below), then push — **not squashed**, see below
 
 ---
 
@@ -174,12 +177,14 @@ does not discover new test classes.
 ## Exit criteria
 
 - [x] Question 0 answered on quoted documents rather than on inference (Task 0)
-- [ ] Question 2 answered A, B or **C**, with C recorded as *nobody owns it yet* rather than as
-      *the caller owns it*
-- [ ] The §7 prediction tested and its result recorded whichever way it fell
-- [ ] ADR-008 used as a hypothesis and nowhere as a premise
-- [ ] Exactly one of a named gap or an ADR
-- [ ] No test added whose subject was created by this sprint
+- [x] Question 2 answered A, B or **C**, with C recorded as *nobody owns it yet* rather than as
+      *the caller owns it* — **C**, and the contract row carries a paragraph saying what it does
+      not claim
+- [x] The §7 prediction tested and its result recorded whichever way it fell — held
+- [x] ADR-008 used as a hypothesis and nowhere as a premise — never cited by a task; Task 1
+      answered from callers and greps, not from what a dynamical state is
+- [x] Exactly one of a named gap or an ADR — named gap
+- [x] No test added whose subject was created by this sprint — no test added at all
 
 And the criterion this sprint is named for:
 
@@ -210,3 +215,29 @@ Sprint 06C.0 Task 3: <named gap|ADR>, and the prediction <held|did not>
 ```
 
 Task 0 has no commit. It was discharged in the spec, and its commit is the spec's.
+
+### This sprint is not squashed, and the rule behind that
+
+> **Implementation sprints squash by default. Investigation sprints preserve the reasoning chain
+> unless there is a compelling reason not to.**
+
+Not an exception made for 06C.0. The two kinds of sprint produce two kinds of evidence, and the
+history has to carry a different thing in each case.
+
+An implementation sprint's product is its end state. What matters is *before* and *after*; the
+steps between are means, and squashing loses nothing a reader needs.
+
+**An investigation sprint's product is the reasoning.** Here the three commits are three kinds of
+evidence, and each stands alone:
+
+| commit | what it carries |
+|---|---|
+| design + plan | the question, and the predictions, recorded before any looking |
+| Task 1 | what the repository actually says |
+| Task 3 | what the contract now records, derived from that |
+
+Squashing the last two would destroy the one property that makes the named gap trustworthy: **that
+the observations existed before the gap was written, and not the other way round.** A single commit
+containing both is indistinguishable from a gap drafted first and evidence assembled to fit it —
+which is the failure `docs/evidence-model.md` calls *a pass that carries no information*, arriving
+by way of the commit log instead of a test.

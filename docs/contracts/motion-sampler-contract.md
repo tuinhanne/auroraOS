@@ -294,9 +294,38 @@ prose is how the 06B.0 convergence claim survived three sprints unexamined.
 |---|---|---|
 | **projection provenance** | where `candidate` comes from — the position a gesture is predicted to land on, which `SnapFactory` takes as an input | Sprint 06B.3 Question 2 established the projection is the *caller's*, because a factory owning it would hold semantics no contract observes and the policy below it would be defined in terms of one family's physics. So the rule is correct and the quantity is unverified: nothing in this contract can say whether the caller's projection is any good, and a snap onto the nearest target of a badly projected candidate is precisely accurate about the wrong place. |
 | **unit boundary crossing for `TimedSpec`** | the timed family has no integration-layer subject | `TimedSpec` carries no velocity to normalise, so the invariant that covers the other three has nothing to say about it. Whether that means it needs none, or needs a different one, has never been asked. |
+| **velocity at a replacement boundary** | what carries from a cancelled execution to the one replacing it. Position is promised by `cancel()` — *"should stay where the user last saw it"* — and asserted at the endpoint layer since 06A. Velocity survives on the handle, is published in value units per second, is expressible as `PhysicsSpec.initialVelocity`, and is promised by nothing that ships. | It cannot be closed by strengthening an existing assertion, because no assertion has a *pair* of executions as its subject. The intent is not missing: `AnimationService` states it under the heading *"Interruption is the point"* and `GestureService` carries a velocity for that stated purpose — but that layer has no implementation, `Animator` below it assigns the job to the caller, and no document reconciles the two. **Sprint 06C.0 established that no production subject carries it**: no caller outside `tests/` invokes any factory, and `AnimationHandle.velocity` has zero readers in the entire tree. So the carrier is built and unread, and the consumer is built and unfed. A replacement that drops the velocity passes every layer this contract reaches and is visibly wrong on a device. |
 
-Both are gaps in *coverage*, not in the assertions that exist. Neither can be closed by making an
+All three are gaps in *coverage*, not in the assertions that exist. None can be closed by making an
 existing property stricter, which is what distinguishes them from the backlog matrix above.
+
+**The third row is broken at exactly one link, and that is what raises it above *nobody has written
+this caller yet*.** Both ends exist, in agreeing units, with nothing between them:
+
+```
+AnimationHandleImpl        velocity = sample.velocity * range        computed every frame
+        │
+        ▼
+AnimationHandle.velocity   public API, value units per second        carrier exists
+        │
+        ✗                  zero readers in the entire tree           ← the break
+        │
+        ▼
+SpringFactory.springTo(…, gestureVelocity, …)                        consumer exists, unfed
+```
+
+**It states that no production subject exists, and nothing about who should own one.** Runtime,
+caller and a layer above the runtime all remain open; Sprint 06C.0 asked *does a subject exist* and
+never reached *who owes anything about it*. Reading this row as *the caller owns it* would convert
+an observation into a decision the evidence does not support.
+
+One observation is recorded with it, and is not a proposal. The signature that could accept such a
+velocity names it `gestureVelocity`, after the source that produced the only case anyone had in
+view. That is correct for every caller which exists today, and it is the third time this repository
+has found a name taken from an origin obscuring a role — after `DecaySpec.friction`, which named a
+law after one family's quantity, and `class … : MotionSampler`, which named a witness after one
+layer's shape. If a replacement ever acquires a subject, this is the name that will be under
+pressure.
 
 ### 7.1 Order of investigation when a backlog clause first goes red
 
