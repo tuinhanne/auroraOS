@@ -42,6 +42,12 @@ forbid-import:  org.lineageos.
 allow-import:   android.content.
 allow-import:   com.android.server.SystemService
 
+# Added by Task 4.3, demanded by an implementation rather than anticipated. `AndroidVolumeSource`
+# reads and writes stream volume through `AudioManager` and observes changes through
+# `VOLUME_CHANGED_ACTION`, which the platform provides no listener for - the system's own volume UI
+# uses the same broadcast. One package, and the compiler asked for it.
+allow-import:   android.media.
+
 # org.lineageos. is forbidden rather than merely absent. Task 2 chose AOSP's
 # config_deviceSpecificSystemServices over LineageOS's config_externalLineageServices precisely so
 # that Aurora depends on Android and not on LineageOS, and a dependency floor that is only a habit
