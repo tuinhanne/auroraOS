@@ -92,3 +92,83 @@ Remove-Item "$env:USERPROFILE\.android\avd\LineageOS_23_2.avd\snapshots" -Recurs
 D:\androidSDK\platform-tools\adb.exe shell input tap <x> <y>
 D:\androidSDK\platform-tools\adb.exe shell dumpsys window | Select-String mCurrentFocus
 ```
+
+---
+
+# Running a locally built image
+
+The AVD above runs the prebuilt LineageOS image. This section is for running one built
+on the VM — which is how Sprint 03 got its Boot PASS, and which needs a different set of
+steps for four reasons that each cost time to find.
+
+## The AVD
+
+```powershell
+D:\androidSDK\emulator\emulator.exe -avd LineageOS_Aurora
+```
+
+`LineageOS_Aurora` points at `system-images\android-36.1\lineage-aurora\`, a directory
+parallel to `lineage\`. **Both AVDs exist on purpose.** A locally built image that does not
+boot is a much smaller problem when the known-good one is still there to compare against,
+and the working configuration this file documents took a day to arrive at.
+
+## Getting an image off the build VM
+
+**`m sdk_repo` is the wrong target.** It succeeds, takes twelve minutes, and produces
+platform-tools zips and no system image.
+
+**`m sdk_addon` is also wrong here**, though it looks right — the product sets
+`PRODUCT_SDK_ADDON_NAME`. It fails on a missing goldfish prebuilt:
+
+```
+ninja: 'device/generic/goldfish/data/etc/userdata.img', missing and no known rule to make it
+```
+
+**`m emu_img_zip` is the one that works.** It writes
+`out/target/product/emu64x/sdk-repo-linux-system-images.zip`, whose layout is exactly what
+`image.sysdir.1` expects: `x86_64/system.img`, `vendor.img`, `ramdisk.img`, `kernel-ranchu`,
+`build.prop`, `source.properties`.
+
+## Download size is 1.1 GB, not 8.6
+
+`system.img` is 8.2 GB and nearly empty — the super partition is sized for growth. It
+compresses to about 0.9 GB, and `emu_img_zip` has already done that, so the zip is 1.1 GB
+and there is no reason to copy the raw images.
+
+## Extracting it: not with PowerShell
+
+`Expand-Archive` fails part way through with:
+
+```
+Exception calling "ExtractToFile": "A local file header is corrupt."
+```
+
+That is not a corrupt file. `system.img` is over 4 GB, so the archive is ZIP64, which
+`Expand-Archive` does not handle. Git Bash's `tar` does not read zip at all. Use Windows'
+own bsdtar:
+
+```powershell
+C:\WINDOWS\System32\tar.exe -xf aurora-sysimg.zip
+```
+
+## What the new image directory needs beyond the zip
+
+`package.xml`, copied from `lineage\x86_64\`. The zip does not carry it, and without it the
+SDK manager does not list the image. The emulator itself reads `image.sysdir.1` and does not
+care, so a missing `package.xml` shows up later and confusingly.
+
+## Making the AVD
+
+Copy the working one rather than creating from scratch — this file's own warnings about
+`config.ini` are the reason:
+
+```powershell
+$avd = "$env:USERPROFILE\.android\avd"
+Copy-Item "$avd\LineageOS_23_2.avd" "$avd\LineageOS_Aurora.avd" -Recurse
+# then in the copy's config.ini:
+#   image.sysdir.1=system-images\android-36.1\lineage-aurora\x86_64\
+# and an .ini beside it whose path= points at the new .avd
+```
+
+Delete `snapshots` from the copy. A snapshot taken against one system image is not valid
+against another, and the failure it produces looks nothing like its cause.
