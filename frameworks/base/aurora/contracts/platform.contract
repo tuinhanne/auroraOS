@@ -1,6 +1,13 @@
-# aurora.platform - system integration.
-# The only layer that will be allowed to reach into android.* (from Sprint 03).
-# Until then the forbid-import list below keeps it as clean as the layers beneath it.
+# aurora.platform - system integration, and still no Android in it.
+#
+# This file used to say that this layer would be "the only layer allowed to reach into android.*
+# (from Sprint 03)". Sprint 03 did the opposite: ADR-012 put the Android surface in a fourth layer,
+# `aurora.platform.android`, and left this one exactly as it was.
+#
+# The reason is Soong rather than taste. `sdk_version` and `platform_apis` are module-global, so
+# there is no way to say "core_current on the host, platform on the device" in one module - and
+# this module is `host_supported` and is what `aurora-platform-tests` statically links. Admitting
+# Android here would have taken the host test graph with it.
 
 layer:          platform
 module:         aurora-platform
@@ -10,9 +17,11 @@ source-root:    platform/java
 allow-aurora-import: aurora.sdk.
 allow-aurora-import: aurora.runtime.
 
-# Sprint 03 will delete the `android.` line below and replace it with a narrower
-# allow list. com.android.internal. stays forbidden permanently: it is unstable
-# private API, and depending on it makes every AOSP rebase a liability.
+# The `android.` line below stays. It was scheduled for deletion by Sprint 03 and outlived the
+# plan: the narrow allow list it was going to be replaced by now lives in
+# platform-android.contract, which is the only contract in this directory that permits an Android
+# import. com.android.internal. stays forbidden everywhere and permanently: it is unstable private
+# API, and depending on it makes every AOSP rebase a liability.
 forbid-import:  android.
 forbid-import:  com.android.internal.
 forbid-import:  aurora.device.

@@ -23,11 +23,17 @@ package aurora.runtime;
  * {@code android.content.Context}. Keeping the abstraction here means the runtime can be unit
  * tested on a host JVM with no device, no emulator and no Android stubs on the classpath.
  *
- * <p>The link to the real platform is {@link #hostContext()}, which is typed as {@link Object}
- * for now. Sprint 02 will narrow it to {@code android.content.Context} once
- * {@code aurora.platform} is allowed to depend on {@code framework}. Callers that need the
- * platform context should cast it there rather than spreading Android types through the
- * runtime layer.
+ * <p>The link to the real platform is {@link #hostContext()}, typed as {@link Object}
+ * permanently. Callers that need the platform context cast it in the layer that is allowed to
+ * name Android types, rather than spreading them through the runtime.
+ *
+ * <p>This paragraph used to end "Sprint 02 will narrow it to {@code android.content.Context}",
+ * and Sprint 03's plan in the module README said the same. Sprint 03 refused the narrowing
+ * instead, because it contradicts the sentence above it: {@code runtime.contract} forbids
+ * {@code android.} with no sunset, for the stated reason that this layer must unit test on a host
+ * JVM. Narrowing the return type would put Android on the runtime's classpath and cost the 356
+ * host tests — the first of the three invariants ADR-012 exists to keep. The cast is one line in
+ * {@code aurora.platform.android} and the alternative was a layer boundary.
  *
  * <p>Instances are immutable and safe to share between threads. Build them with
  * {@link #builder(String)}.
@@ -73,7 +79,7 @@ public final class AuroraContext {
      * Returns the underlying platform context, or {@code null} when running outside Android
      * such as in a host-side unit test.
      *
-     * <p>Typed as {@link Object} on purpose; see the class documentation.
+     * <p>Typed as {@link Object} on purpose and permanently; see the class documentation.
      */
     public Object hostContext() {
         return mHostContext;

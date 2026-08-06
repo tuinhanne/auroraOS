@@ -485,11 +485,23 @@ negative fixtures. Done before the system wiring on purpose: once `aurora.platfo
 access to `framework` in Sprint 03, the classpath stops protecting the lower layers by
 accident, so the tripwire has to exist first.
 
-**Sprint 03 — Wire into the system.** Let `aurora-platform` depend on `framework`, narrow
-`AuroraContext.hostContext()` from `Object` to `android.content.Context`, initialize
-`AuroraRuntime` inside `SystemServer`, and publish `AuroraServiceRegistry` as a system
-service. This is the first step that changes runtime behaviour, so Boot PASS must be
-verified for real rather than holding by construction as it does today.
+**Sprint 03 — Wire into the system.** Written in Sprint 02 as: let `aurora-platform` depend on
+`framework`, narrow `AuroraContext.hostContext()` from `Object` to `android.content.Context`,
+initialize `AuroraRuntime` inside `SystemServer`, and publish `AuroraServiceRegistry` as a system
+service. Boot PASS must be verified for real rather than holding by construction.
+
+**Three of those four turned out to be wrong, and the sprint recorded why rather than quietly
+doing something else.** `SystemServer` is not modified at all — AOSP's own
+`config_deviceSpecificSystemServices` starts a class named by a device resource overlay Aurora
+already owns, and its call site wraps every such service in `try/catch → reportWtf`, so a failure
+degrades instead of bootlooping. `aurora-platform` does not depend on `framework` — ADR-012 put the
+Android surface in a fourth layer instead, because Soong's `sdk_version` and `platform_apis` are
+module-global and admitting Android here would have taken the host test graph with it. And
+`hostContext()` stays `Object` permanently, because narrowing it would put Android on the runtime's
+classpath, which `runtime.contract` forbids for the reason that keeps 356 tests running on a host.
+
+What survived is the last sentence: Boot PASS is still the sprint's real exit criterion, and still
+the only one that cannot be established without a device.
 
 **Sprint 04 — First service.** Define a service interface in `aurora.sdk`, implement it in
 `aurora.platform`, and register it. This is where the three-layer boundary gets its first
