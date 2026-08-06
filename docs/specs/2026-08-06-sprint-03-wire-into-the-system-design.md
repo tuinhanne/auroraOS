@@ -246,6 +246,101 @@ the trap Task 1 itself avoided, one level up.
 
 ---
 
+## Task 3 — the minimal Android surface
+
+> **What is the narrowest Android surface that lets the hook compile?**
+
+Not *remove `forbid-import: android.`*. The two framings differ in who decides the scope: the first
+lets the compiler decide it, the second lets whoever is typing decide it, and only one of those has
+an opinion that can be checked.
+
+> **Prediction: the answer is substantially smaller than `android.*`.**
+
+Recorded before the work so it can be wrong. A hook that constructs a service and hands over a
+context plausibly needs one or two packages; if the honest list turns out to be broad, that is worth
+knowing and worth writing down as a surprise rather than as a shrug.
+
+### The amendment has a second half, and it is the one nobody predicts
+
+`platform.contract` today:
+
+```
+forbid-import:  android.
+forbid-import:  com.android.internal.
+forbid-import:  aurora.device.
+forbid-dep:     services
+```
+
+`com.android.server.SystemService` is not blocked by any `forbid-import` line — but it lives in the
+`services` module, and **`forbid-dep: services` blocks the dependency**. So a change that only
+touched the import list would produce a contract that permits the imports and forbids the module
+they come from.
+
+> **Prediction, testable: the amendment is two lines, not one — a narrowed `android.` allow list
+> *and* a relaxed `forbid-dep: services`.**
+
+`com.android.internal.` stays forbidden regardless. The contract's own comment says why, and nothing
+here changes it: *"it is unstable private API, and depending on it makes every AOSP rebase a
+liability."*
+
+### `org.lineageos` is not on the list, and that is deliberate
+
+Task 2 chose the AOSP hook over the LineageOS one so that Aurora depends on Android rather than on
+LineageOS:
+
+```
+Aurora → Android                    what this sprint builds
+Aurora → LineageOS → Android        what hook 2 would have made it
+```
+
+The allow-list must keep that true. `org.lineageos.` is not an `android.` prefix, so nothing in this
+amendment admits it by accident — but if a later sprint finds itself wanting it, that is a decision
+about Aurora's dependency floor and needs an ADR, not an allow-list edit.
+
+### Method, and why writing the code first is not a violation
+
+The list is derived by compilation rather than by design:
+
+1. write the hook, with the contract still forbidding everything
+2. compile, and let the compiler name what is missing — `arch-test.sh` is red throughout, which is
+   the correct state and not a problem to route around
+3. amend `platform.contract` to exactly what was named, and nothing adjacent
+4. `arch-test.sh` green, negative fixtures updated to the new boundary
+
+Step 1 has code importing Android before the contract allows it, which looks like it inverts the
+rule this sprint keeps repeating. It does not: **the rule is that no such code may *land* before the
+contract permits it**, and steps 1–2 are a measurement whose output is a list. Nothing is committed
+until step 3 has run, so the tree never holds code the contract forbids.
+
+Written down because the distinction is exactly the sort that gets quietly dropped, and because a
+sprint that skipped step 1 would have to guess the list — which is the failure this task exists to
+avoid.
+
+**Two kinds of code, and only one of them is an artifact:**
+
+| | what it is | where it lives |
+|---|---|---|
+| **candidate** | an instrument. Its output is a list of missing dependencies, and it is thrown away or superseded | nowhere, until the contract permits it |
+| **production** | the same text, after the contract has been amended to permit it | the tree, reviewed, gated |
+
+The two can be character-for-character identical and still be different things, which is the same
+distinction ADR-011 part 3 makes about a patch and for the same reason: **what an artifact is
+depends on the direction it was authored in, and that is invisible in the artifact.**
+
+### The allow list may not be wider than the compiler forces
+
+`android.content.Context` does not admit `android.view.`, `android.os.` or `android.graphics.`
+because they will probably be wanted later. Every package on the list must have been named by a
+compiler or demanded by an implementation that exists.
+
+This is what keeps `platform.contract` a measurement rather than a wish list. A precautionary
+entry cannot be wrong — nothing fails when it is unused — so nothing ever removes it, and the
+contract slowly stops describing the boundary it claims to describe. The narrow list is
+uncomfortable on purpose: it goes red the moment the boundary really moves, and that red is the
+only signal that it did.
+
+---
+
 ## 4. What this sprint will not do
 
 - **No `ChoreographerFrameScheduler`.** That is Sprint 08, and it needs what this sprint produces.
@@ -263,8 +358,8 @@ the trap Task 1 itself avoided, one level up.
    the witness that shows the gate can refuse.
 2. **Task 2 — the survey.** Answer Question 0 by examining candidates against the four questions.
    Record what was looked at, including whatever turned out not to exist.
-3. **Task 3 — the contract amendment.** `platform.contract` narrowed, gate re-run, negative fixtures
-   updated. Before any code imports Android, not alongside it.
+3. **Task 3 — the minimal Android surface.** See below. Before any code imports Android, not
+   alongside it.
 4. **Task 4 — integration.** Whatever Question 0 decided, including the first real patch if one is
    needed, and a `ServiceProvider` that hands out `DefaultVolumeService`.
 
