@@ -100,9 +100,81 @@ So the survey ends rather than trails off:
    expensive twice is the wrong structure, and this is the question a decision made under the
    pressure of one hook would skip.
 
+## The survey, run 2026-08-06
+
+Five Soong shapes, each the smallest thing that asks one question. Three files of Kotlin — a
+host-verifiable object, a `SystemService` subclass, and a JUnit test — reused across all of them, in
+a probe directory each script deleted after itself.
+
+| shape | result |
+|---|---|
+| **A** — one module, `sdk_version: core_current`, `target.android.{srcs, libs}` | **refuted** |
+| **A2** — `platform_apis` under `target.android`, `sdk_version` under `target.host` | **refuted** |
+| **D** — one module, `libs` at top level, `exclude_srcs` on the host variant | **refuted** |
+| **D2** — one module, `platform_apis` module-wide, `services.core` under `target.android` | builds (03:19) |
+| **D3** — D2, plus a `java_test_host` linking it | builds (03:24) |
+| **B/C** — two modules, `java_test_host` linking the Android-free one | builds (03:30) |
+
+### What killed the three
+
+**A** — Soong orders API sets and checks the ordering across a dependency:
+
+> *module "probe-a" variant "android_common": compiles against core Java API, but dependency
+> "services.core" is compiling against private API.*
+
+**A2** — the properties do not exist per variant:
+
+> *unrecognized property "target.android.platform_apis"*
+> *unrecognized property "target.host.sdk_version"*
+
+That is structural rather than a policy: `sdk_version` and `platform_apis` are **module-global in
+Soong**, so no spelling of "core_current on the host, platform on the device" exists. A is not
+refuted in one form — it is refuted in every form.
+
+**D** — `services.core` has no host variant, and a top-level `libs` applies to both:
+
+> *dependency "services.core" of "probe-d" missing variant:*
+
+### Two survivors, and B/C and C were the same shape all along
+
+`probe-b-android` and a "fourth module" are the same Soong graph; the difference was only where
+existing code lives. So the four alternatives are really **two**: one module carrying both halves,
+or two modules.
+
+### The four questions, for the two that build
+
+Measured rows say what a build did. Derived rows say what the contracts would then have to say, and
+are reasoning rather than measurement — marked so nobody has to guess which is which.
+
+| | **D2/D3** — one module | **B/C** — two modules |
+|---|---|---|
+| host tests survive *(measured)* | **yes** — a `java_test_host` links it | **yes** — links the Android-free module |
+| second Android artifact *(derived)* | another file in `target.android.srcs` | another file in the Android module |
+| **`sdk_version`** *(measured)* | must be `platform_apis` **module-wide**; `arch-test.sh`'s *"sdk_version is core_current"* check fails for the whole layer | the core module keeps `core_current`; only the new module needs a different rule |
+| **where Android enters** *(derived)* | a subdirectory of the same module, under the same contract — so the allow list admitting `android.content.` admits it for the Android-free half too | its own module, its own `source-root`, its own allow list |
+
+### What the survey actually found
+
+The two shapes are equal on everything except the two rows that carry the invariants:
+
+> **D2 works, and works by removing the thing the gate was asserting.** `platform_apis` module-wide
+> and one shared allow list mean the boundary between host-verifiable code and Android code still
+> exists — it is just no longer expressible in a contract, and therefore no longer checked.
+
+That is not an argument that D2 is wrong. It is the price, stated in the same terms the other rows
+are stated in, so that choosing it would be choosing it rather than discovering it later.
+
+---
+
 ## Decision
 
-**Deferred.**
+**Deferred, and the deferral's exit condition is now met.** The four questions are answered for both
+surviving shapes; three alternatives are refuted by the compiler rather than by preference.
+
+What remains is a judgement this ADR will not make on its own: whether an asserted boundary is worth
+a second Soong module. The evidence favours the split — it is the only shape where
+`sdk_version: core_current` survives and where Android's entry point has a contract of its own — but
+that is a reading of the table, and the table is above so it can be read differently.
 
 Not "no decision yet" as a way of leaving the room. The exit condition is written down: the four
 questions above, answered for each alternative, with what was tried recorded — including whatever
