@@ -441,6 +441,59 @@ surface is two imports wide, so no part of the choice rests on a guess about sco
 
 ---
 
+## Task 4.4's result, recorded 2026-08-06 — **Boot PASS**
+
+```
+08-06 18:45:13.128   773   773 I Aurora : onStart: Aurora is running inside system_server
+08-06 18:45:13.134   773   773 I Aurora : volume service resolved: media=0.33333334 steps=16 active=MEDIA
+Boot completed in 155321 ms
+```
+
+`773` is `system_server`'s pid. Aurora is running inside it.
+
+### What the second line proves that the first does not
+
+The first line proves the mechanism: the device overlay filled
+`config_deviceSpecificSystemServices`, `SystemServer` read it, resolved
+`aurora.platform.android.AuroraSystemService` by name off `SYSTEMSERVERCLASSPATH`, and
+constructed it. Four things, none of which any build could confirm.
+
+The second proves the *arithmetic*, and it checks itself:
+
+```
+steps=16          →  max 15, min 0, counted inclusively:  15 − 0 + 1
+media=0.33333334  →  level 5:                             (5 − 0) / (15 − 0)
+```
+
+Both numbers come from one `stateOf` call, and each is consistent with the other under the
+rules `DefaultVolumeService` applies. **Seventeen host tests asserted those rules against a fake;
+a real `AudioManager` inside a real `system_server` has now produced the same answers.** The
+inclusive step count — *"silence is a position a UI has to be able to draw and snap to"* — is
+visible in production output as 16 rather than 15.
+
+That is what the seam in ADR-010 was for, seen from the far end: everything with a decision in it
+was verified on a host, and the part that could not be was thin enough that its first run on a
+device produced numbers that needed no interpretation.
+
+### What this does not prove
+
+- **Nothing about `lineage_beyond2lte`.** This is the emulator, which is why ADR-013 exists.
+- **Nothing about the broadcast path.** `AndroidVolumeSource` registers its receiver only when
+  something listens, and nothing does yet. `VOLUME_CHANGED_ACTION` has never fired into Aurora.
+- **Nothing is drawn.** The screen is unchanged, deliberately: Sprint 03 puts Aurora *inside*
+  `system_server` and gives it nothing to show.
+
+### Sprint 03's exit criterion, in the README's own words
+
+> *"This is the first step that changes runtime behaviour, so **Boot PASS must be verified for
+> real** rather than holding by construction as it does today."*
+
+Written in Sprint 02, for a sprint that then turned out to need no `SystemServer` patch, no
+`framework` dependency and no narrowed `hostContext()`. Of the four things that entry asked for,
+that sentence is the one that survived — and it is the one that has now been done.
+
+---
+
 ## 4. What this sprint will not do
 
 - **No `ChoreographerFrameScheduler`.** That is Sprint 08, and it needs what this sprint produces.
