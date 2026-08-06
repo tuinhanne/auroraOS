@@ -78,6 +78,35 @@ java_library {
 }
 
 // ---------------------------------------------------------------------------
+// Layer 4: aurora.platform.android
+//
+// The only module in the tree that may see Android. ADR-012.
+//
+// Split from aurora-platform rather than folded into it, because Soong's
+// sdk_version and platform_apis are module-global: there is no spelling of
+// "core_current on the host, platform on the device" in one module. Measuring
+// that is what closed the question - see the ADR - and the consequence is that
+// the layer boundary and the module boundary are now the same line. Everything
+// below stays host-testable because Android is *absent from its classpath*,
+// not merely unused by it.
+//
+// Device-only on purpose. host_supported would create a variant that can never
+// resolve `android.`, which is how the first measurement failed.
+// ---------------------------------------------------------------------------
+java_library {
+    name: "aurora-platform-android",
+    srcs: [
+        "platform/android/java/**/*.java",
+        "platform/android/java/**/*.kt",
+    ],
+    static_libs: ["aurora-platform"],
+    libs: ["services.core"],
+    platform_apis: true,
+    installable: true,
+    visibility: ["//frameworks/base/aurora:__subpackages__"],
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests: run on the host, no device or emulator required.
 //   m aurora-platform-tests && out/host/linux-x86/nativetest*/... (or atest)
 // ---------------------------------------------------------------------------

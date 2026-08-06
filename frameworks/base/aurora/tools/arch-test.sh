@@ -47,7 +47,7 @@ check_forbidden_imports() {
     # Anchor at the start: 'android.' must match android.content.Context but not
     # a package such as myandroid.foo. Dots are escaped so they are literal.
     escaped="${prefix//./\\.}"
-    hits="$(imports_in "$src" | grep -E "^$escaped" || true)"
+    hits="$(imports_in "$src" | grep -E "^$escaped" | drop_allowed "$contract" || true)"
     if [ -n "$hits" ]; then
       fail "$layer must not import '$prefix':"
       echo "$hits" | sed 's/^/          /'
@@ -55,6 +55,43 @@ check_forbidden_imports() {
       ok "$layer: no import of $prefix"
     fi
   done < <(values_of forbid-import "$contract")
+
+  check_allow_import_is_used "$contract" "$src"
+}
+
+# Remove the imports a contract explicitly permits. Sprint 03 introduced the first layer that has
+# to say "Android, but only this much of it", and a blacklist alone cannot express that: the
+# useful statement is `forbid-import: android.` narrowed by exactly what was measured, not a
+# forbid list carefully shaped to have a hole in it.
+drop_allowed() {
+  local contract="$1" allowed line ok_line prefix
+  mapfile -t allowed < <(values_of allow-import "$contract")
+  [ "${#allowed[@]}" -eq 0 ] && { cat; return; }
+  while IFS= read -r line; do
+    ok_line=0
+    for prefix in "${allowed[@]}"; do
+      [ -z "$prefix" ] && continue
+      case "$line" in "$prefix"*) ok_line=1; break ;; esac
+    done
+    [ "$ok_line" -eq 0 ] && printf '%s\n' "$line"
+  done
+}
+
+# An allowance nothing uses is a hole nobody is watching. RULE-015 says the same thing about
+# fixtures: no orphans in either direction. A permission that has outlived the import it was
+# measured for should be removed, and this is what notices.
+check_allow_import_is_used() {
+  local contract="$1" src="$2" layer prefix escaped
+  layer="$(value_of layer "$contract")"
+  while IFS= read -r prefix; do
+    [ -z "$prefix" ] && continue
+    escaped="${prefix//./\\.}"
+    if imports_in "$src" | grep -qE "^$escaped"; then
+      ok "$layer: allowance '$prefix' is used"
+    else
+      fail "$layer allows '$prefix' and imports nothing under it - an unused allowance"
+    fi
+  done < <(values_of allow-import "$contract")
 }
 
 # Any aurora.* import must be either the layer's own package or explicitly allowed.
@@ -143,12 +180,63 @@ check_soong_deps() {
 
   [ "$bad" -eq 0 ] && ok "$module: no forbidden Soong dependency"
 
-  # sdk_version must stay core_current until a contract says otherwise.
-  if grep -q 'sdk_version: "core_current"' <<< "$block"; then
-    ok "$module: sdk_version is core_current"
-  else
-    fail "$module: sdk_version is not core_current - the classpath guarantee is gone"
-  fi
+  # What the module compiles against. This used to be an unconditional demand for
+  # sdk_version: core_current, phrased as though it were universal - which it was, until ADR-012
+  # split off a layer whose whole job is to see Android. It is now what the contract claims, and
+  # the check refuses a mismatch in either direction: a layer that says core_current and is not,
+  # and a layer that says platform_apis and is not.
+  local want
+  want="$(value_of expect-classpath "$contract")"
+  [ -z "$want" ] && want="core_current"
+
+  case "$want" in
+    core_current)
+      if grep -q 'sdk_version: "core_current"' <<< "$block"; then
+        ok "$module: sdk_version is core_current"
+      else
+        fail "$module: sdk_version is not core_current - the classpath guarantee is gone"
+      fi
+      ;;
+    platform_apis)
+      if grep -q 'platform_apis: true' <<< "$block"; then
+        ok "$module: platform_apis, as its contract states"
+      else
+        fail "$module: contract expects platform_apis and the module does not declare it"
+      fi
+      if grep -q 'sdk_version:' <<< "$block"; then
+        fail "$module: declares both platform_apis and sdk_version - Soong takes one"
+      fi
+      ;;
+    *)
+      fail "$(basename "$contract"): unknown expect-classpath '$want'"
+      ;;
+  esac
+
+  # host_supported, where a contract has an opinion. ADR-012's measurement 1 failed because a host
+  # variant can never resolve `android.`, so a layer that sees Android must not have one - and the
+  # gate should say that rather than leave it to whoever edits Android.bp next.
+  local host_want
+  host_want="$(value_of expect-host-supported "$contract")"
+  case "$host_want" in
+    "") ;;
+    no)
+      if grep -q 'host_supported: true' <<< "$block"; then
+        fail "$module: contract says it must not be host_supported, and it is"
+      else
+        ok "$module: device-only, as its contract states"
+      fi
+      ;;
+    yes)
+      if grep -q 'host_supported: true' <<< "$block"; then
+        ok "$module: host_supported, as its contract states"
+      else
+        fail "$module: contract expects host_supported and the module does not declare it"
+      fi
+      ;;
+    *)
+      fail "$(basename "$contract"): unknown expect-host-supported '$host_want'"
+      ;;
+  esac
 }
 
 # RULE-007: forbidden platform calls.

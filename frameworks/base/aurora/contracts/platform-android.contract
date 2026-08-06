@@ -1,0 +1,66 @@
+# aurora.platform.android - the only place Android exists.
+#
+# ADR-012. Aurora has always had a boundary between code verifiable on a host and code that knows
+# what Android is. Until this layer, that boundary was stated and reviewed; now it is also a build
+# fact, because the two halves are different Soong modules and only one of them can see `android.`.
+#
+# The measurement that produced the allow list below is Sprint 03 Task 3: a `SystemService` subclass
+# that hands a context to the runtime needs two imports and no third. The list is exactly that wide
+# and may not be widened by anticipation - every entry must have been named by a compiler or
+# demanded by an implementation that exists. A precautionary entry cannot go red, so nothing ever
+# removes it, and the contract slowly stops describing the boundary it claims to describe.
+
+layer:          platform-android
+module:         aurora-platform-android
+package-root:   aurora.platform.android
+source-root:    platform/android/java
+
+# Its own source root, which is the reason this is a separate contract rather than a second
+# stanza in platform.contract: `arch-test.sh` reads one source-root per contract, so a second
+# directory under the old contract would have been unwatched at exactly the point Android enters.
+
+allow-aurora-import: aurora.sdk.
+allow-aurora-import: aurora.runtime.
+allow-aurora-import: aurora.platform.
+
+# Forbidden broadly, then narrowed by exactly what was measured. The order matters: an
+# `allow-import` narrows a `forbid-import` and does nothing on its own, so a contract that listed
+# only the allowances would permit every Android package while appearing to name two. The gate is
+# calibrated against precisely that mistake.
+#
+# `com.android.internal.` needs no line of its own - `com.android.` covers it, and the single
+# allowance below does not reach it.
+forbid-import:  android.
+forbid-import:  com.android.
+forbid-import:  aurora.device.
+forbid-import:  org.lineageos.
+
+# What Sprint 03 Task 3 measured, and nothing adjacent. `android.view.`, `android.os.` and
+# `android.graphics.` are absent deliberately: they will probably be wanted, and "probably" is not
+# a measurement. One class rather than a package for the server side, because one class is what
+# extending a `SystemService` needs.
+allow-import:   android.content.
+allow-import:   com.android.server.SystemService
+
+# org.lineageos. is forbidden rather than merely absent. Task 2 chose AOSP's
+# config_deviceSpecificSystemServices over LineageOS's config_externalLineageServices precisely so
+# that Aurora depends on Android and not on LineageOS, and a dependency floor that is only a habit
+# is one import away from not being one. Changing this line is a decision about what Aurora is
+# built on, and needs an ADR.
+
+allow-dep:      aurora-runtime
+allow-dep:      services.core
+
+forbid-dep:     aurora-device
+forbid-dep-family: framework
+
+# This layer compiles against platform APIs, which is what `services.core` requires and what
+# `sdk_version: core_current` cannot express. Declared rather than assumed: the check that reads
+# this refuses a module whose classpath does not match what its contract claims, in either
+# direction.
+expect-classpath: platform_apis
+
+# And it is device-only. `host_supported` would put Android on a host variant that can never
+# resolve it - measurement 1 of Task 3 failed for exactly that reason - and would quietly re-create
+# the shape ADR-012 rejected.
+expect-host-supported: no
