@@ -293,12 +293,31 @@ splash animation and blames the engine.
 
 ## Exit criteria
 
-- [ ] Question 0 answered by building it, not by quoting the README
-- [ ] the timebase question answered by measurement, and the `FrameScheduler` KDoc corrected if it
-      turns out to have been wrong
-- [ ] `DefaultAnimationController.stop()`'s deferred paragraph replaced by a decision
-- [ ] the frame thread named, and `AnimationHandle`'s threading note updated to say which one
-- [ ] an animation advances on a device, with frame timestamps from `Choreographer`
-- [ ] nothing drawn
+- [x] Question 0 answered by building it, not by quoting the README — **it is an adapter**, and the
+      `ChoreographerAnimationDriver` the README also named turned out to have nothing to do
+- [x] the timebase question answered by measurement, and the `FrameScheduler` KDoc corrected if it
+      turns out to have been wrong — **it was right**, so nothing was corrected. A second KDoc was
+      *vindicated* instead: *"always measure from the timestamps"* is why three uneven samples in a
+      second still landed the spring on its target
+- [ ] `DefaultAnimationController.stop()`'s deferred paragraph replaced by a decision — **not met as
+      written, and deliberately.** The emulator cannot suspend, so there is no decision to make on
+      evidence. The paragraph was replaced by a sharper unknown: the mechanism, the failure site
+      (`ExecutionTimeline.advanceTo`), the repair that already exists (`pause`/`resume` shifting
+      `originNanos`), and what would settle it (hardware that sleeps)
+- [x] the frame thread named, and `AnimationHandle`'s threading note updated to say which one —
+      `system_server`'s main thread, and now enforced rather than described
+- [x] an animation advances on a device, with frame timestamps from `Choreographer` — and overshot
+      its target, which is the shape a non-running solver cannot fake
+- [x] nothing drawn
 
-The last one is the constraint that keeps this sprint from becoming Sprint 09.
+The last one is the constraint that keeps this sprint from becoming Sprint 09, and it held.
+
+**Five of six, and the sixth is the interesting one.** A criterion written expecting a decision
+was met by a measurement showing no decision was available. Leaving it unticked is the honest
+record: the gap that has waited since 06A is still open, and now waits on hardware rather than on
+a sprint.
+
+**One result nobody asked for**, and it is the sprint's most useful: the frame source starves for
+~3.7 s during early boot and recovers to ~57 fps, observed twice from independent builds. Sprint 09
+inherits it as *do not animate at boot* — and, more usefully, as evidence for later that boot
+scheduling and runtime scheduling are different environments.
