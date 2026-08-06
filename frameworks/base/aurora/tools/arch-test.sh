@@ -118,6 +118,29 @@ check_soong_deps() {
       bad=1
     fi
   done < <(values_of forbid-dep "$contract")
+
+  # forbid-dep names one module. forbid-dep-family names a family, and the difference is not
+  # cosmetic: Sprint 03 Task 3 measured 89 Soong modules called `services` or `services.something`
+  # and 19 called `framework` or `framework-something`. The contracts named two of those 108.
+  #
+  # `forbid-dep: services` was doing exactly what it says - forbidding the module called
+  # `services` - while `services.core`, which is where `com.android.server.SystemService` lives,
+  # went unmentioned and therefore unguarded. Enumerating is the right shape for a family of two
+  # and hopeless for a family of eighty-nine, and a list that has to be re-derived after every
+  # AOSP rebase would be stale without ever going red.
+  #
+  # Matched on the quoted prefix, so `services` catches `"services"` and `"services.core"` alike
+  # while `"aurora-runtime"` is untouched.
+  while IFS= read -r fam; do
+    [ -z "$fam" ] && continue
+    if grep -qE "\"$fam[\".-]" <<< "$block"; then
+      local found
+      found="$(grep -oE "\"$fam[a-zA-Z0-9_.-]*\"" <<< "$block" | sort -u | tr '\n' ' ')"
+      fail "$module declares a dependency in the forbidden family '$fam': $found"
+      bad=1
+    fi
+  done < <(values_of forbid-dep-family "$contract")
+
   [ "$bad" -eq 0 ] && ok "$module: no forbidden Soong dependency"
 
   # sdk_version must stay core_current until a contract says otherwise.

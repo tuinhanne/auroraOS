@@ -19,8 +19,19 @@ forbid-import:  aurora.device.
 
 allow-dep:      aurora-runtime
 
-forbid-dep:     services
 forbid-dep:     aurora-device
+
+# The system server, as a family rather than as one name.
+#
+# This read `forbid-dep: services` until Sprint 03 Task 3, which found the line was doing exactly
+# what it said and nothing more: the checkout holds 89 Soong modules called `services` or
+# `services.something`, and only the bare one was named. `services.core` - where
+# `com.android.server.SystemService` lives - was never forbidden, so this layer could have taken a
+# dependency on the system server internals with no gate saying a word.
+#
+# Not a defect in the gate. A contract that named one member of a family, in a file whose
+# convention is to name modules.
+forbid-dep-family: services
 
 # RULE-007 does not restrict the platform: this is the layer whose job is to know
 # what Android actually is. Sprint 08 (Android Platform Bridge) adds

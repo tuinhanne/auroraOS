@@ -16,10 +16,15 @@ forbid-import:  aurora.device.
 
 allow-dep:      aurora-sdk
 
-forbid-dep:     framework
-forbid-dep:     framework-minus-apex
-forbid-dep:     services
 forbid-dep:     aurora-platform
+
+# Families, not names. Sprint 03 Task 3 counted 89 modules called `services` or
+# `services.something` and 19 called `framework` or `framework-something`; these three lines used
+# to name three of those 108. `framework` and `framework-minus-apex` were listed separately, which
+# is what made the shape of the problem visible - a file naming members of a set one at a time,
+# against a set that grows with every AOSP release.
+forbid-dep-family: framework
+forbid-dep-family: services
 
 # RULE-007: as for the SDK, with one declared exemption.
 #
