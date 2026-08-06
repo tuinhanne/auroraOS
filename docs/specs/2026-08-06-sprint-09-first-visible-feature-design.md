@@ -47,6 +47,30 @@ Volume overlay meets all four and has a behaviour spec already written. **That i
 and not a decision** — Question 0 stays open until this sprint's first task compares it against at
 least one alternative that was chosen for its own reasons rather than for being next on a list.
 
+### The alternative has to be able to win
+
+The failure mode this question is most likely to meet is not choosing wrongly. It is holding a
+comparison whose outcome was fixed before it started: a favourite beside two options nobody would
+ship, weighed honestly, and recorded as a decision. **Question 0 would then have closed before
+Task 1 opened, while leaving a paper trail that says otherwise** — which is worse than not comparing
+at all, because the paper trail is what a later reader trusts.
+
+Candidates worth putting up, and none of them is a joke:
+
+| candidate | the case for it |
+|---|---|
+| a static diagnostic surface | answers *can Aurora draw* and nothing else; needs no frame source; wrong the moment it ships to a user, which is itself informative |
+| an "Aurora" watermark | permanent, trivially judgeable, and forces the question of what Aurora is allowed to put on someone's screen |
+| a notification chip | small, wanted for its own sake, and lands where `IslandService` already points |
+| the volume overlay | a behaviour spec exists, ADR-003 names the use case, and hardware keys make it testable without touching anything |
+
+**The test for whether an alternative was real: if it had won, would anybody be surprised?** If the
+answer is no for at least one of them at the moment the comparison starts, the comparison is a
+comparison. If it is yes for all but one, Task 1 has written up a decision it had already made.
+
+That test is worth applying out loud, in Task 1's own words, because it cannot be applied
+afterwards — by then the winner looks inevitable regardless of how it was chosen.
+
 ---
 
 ## 3. Question 1 — where does Aurora draw from?
