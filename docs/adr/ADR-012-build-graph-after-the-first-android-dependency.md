@@ -1,6 +1,6 @@
 # ADR-012 — Build graph after the first Android dependency
 
-**Status:** open · Decision **deferred** · 2026-08-06 · Sprint 03
+**Status:** accepted · 2026-08-06 · Sprint 03
 
 ## Context
 
@@ -168,13 +168,48 @@ are stated in, so that choosing it would be choosing it rather than discovering 
 
 ## Decision
 
-**Deferred, and the deferral's exit condition is now met.** The four questions are answered for both
-surviving shapes; three alternatives are refuted by the compiler rather than by preference.
+**Split.** Aurora's Android-facing code lives in a Soong module of its own, and the module that
+everything below it depends on stays host-supported and `core_current`.
 
-What remains is a judgement this ADR will not make on its own: whether an asserted boundary is worth
-a second Soong module. The evidence favours the split — it is the only shape where
-`sdk_version: core_current` survives and where Android's entry point has a contract of its own — but
-that is a reading of the table, and the table is above so it can be read differently.
+The survey above is kept in full, and the refuted shapes with it. They are not a record that
+options were considered; they are why this one was chosen.
+
+### The reason, and it is not that a second module is tidier
+
+**The logical boundary and the build boundary become the same line.**
+
+Aurora has always had a boundary between code that is verifiable on a host and code that knows what
+Android is. Until now that boundary was stated — RULE-002, `platform.contract` — and checked by a
+gate reading a source root. Under D2 it would still exist and still be true, and nothing in the
+build would be able to say so: `platform_apis` module-wide removes the `sdk_version` assertion for
+the whole layer, and one shared allow list admits `android.content.` for the half that must never
+use it.
+
+Under the split, the two lines coincide:
+
+| | |
+|---|---|
+| the host module | `sdk_version: "core_current"` — Android is *absent from the classpath*, not merely unused |
+| the Android module | its own `source-root`, its own allow list, and that list applies to nothing else |
+
+So a later change that pulls `android.content.` into the host half is a **compile error**, not a
+review catch. **The build artifact becomes evidence of the architecture** rather than a place where
+the architecture is described.
+
+That is the same move this repository has made everywhere else: `samplerFor`'s exhaustive `when`
+replaced a runtime throw with a build failure, and gate 5 retired because *"a type error beats a
+grep"*. This is that sentence applied to a layer boundary.
+
+### What decided it was refutation, not preference
+
+Three of the four alternatives were removed by the compiler. A2's message —
+`unrecognized property "target.android.platform_apis"` — is structural: Soong has no way to express
+"core_current on the host, platform on the device" in one module, so an entire branch of the design
+space is closed rather than dispreferred.
+
+D2 was not refuted. It was priced, and the price is stated above in the same terms as everything
+else so that this decision is a choice between two known costs rather than a preference between two
+descriptions.
 
 Not "no decision yet" as a way of leaving the room. The exit condition is written down: the four
 questions above, answered for each alternative, with what was tried recorded — including whatever
@@ -186,9 +221,20 @@ benefit most from nobody asking.
 
 ## Consequences
 
-- **Sprint 03 does not complete.** Task 4 needed a build graph, and the build graph is now a decision
-  rather than a step. The sprint's other results stand: no upstream patch is needed, the surface is
-  two imports wide, and the contracts now forbid families rather than names.
-- `patches/` stays empty and ADR-011 stays unused. That was already true after Task 2.
-- Nothing in `frameworks/` changes on account of this ADR. There is no code to write until it is
-  answered, which is the point of writing it before there is.
+- **Sprint 03 Task 4 reopens**, with the build graph decided rather than discovered while building.
+- A new Soong module, `platform_apis`, `libs: ["services.core"]`, statically linking the layer below
+  it, and the only module in the tree that may import `android.`.
+- **A new contract**, because `arch-test.sh` reads one `source-root` per contract and the new source
+  root would otherwise be unwatched. It carries the narrow allow list Task 3 measured —
+  `android.content.` and nothing adjacent — and it needs its own answer to the `sdk_version` check,
+  which `platform.contract` currently states as though it were universal.
+- `aurora-platform` is unchanged: still `host_supported`, still `core_current`, still what
+  `aurora-platform-tests` links. **The 356 host tests are untouched by this decision**, which was
+  the first of the three invariants and the one most easily lost.
+- **RULE-002 holds by package.** The new module's package sits under `aurora.platform`, so *"Android
+  is confined to `aurora.platform`"* stays true as written; what changes is that the confinement is
+  now also a build fact.
+- `ChoreographerFrameScheduler`, already named for Sprint 08, has a home the day it is written. That
+  was question 4 of the survey, and it is answered by the same module rather than by a second
+  decision.
+- `patches/` stays empty and ADR-011 stays unused. Unchanged since Task 2, and not affected here.
