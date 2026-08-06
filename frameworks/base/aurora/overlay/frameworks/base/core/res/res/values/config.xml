@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The AuroraOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+
+<!--
+     Aurora's framework resource overlay.
+
+     This directory is Aurora's, and the product that uses it says so - see
+     patches/vendor/lineage/0001-aurora-on-the-emulator.patch, which is two lines and points here.
+     Keeping the content on this side means the upstream patch carries no Aurora decisions, only
+     the fact that Aurora exists on that product. ADR-013.
+
+     `lineage_beyond2lte` reaches the same array through device/samsung/beyond2lte/overlay, which
+     Aurora also owns and which needs no patch at all.
+-->
+<resources>
+
+    <!--
+         Started by SystemServer, immediately before PHASE_DEVICE_SPECIFIC_SERVICES_READY, in a
+         loop that wraps each entry in try/catch and reports a failure with reportWtf. So a service
+         that throws here degrades rather than bootlooping - structurally, and not because the
+         integration remembered to guard itself.
+
+         Sprint 03 Task 2 chose this over LineageOS's config_externalLineageServices so that Aurora
+         depends on Android rather than on LineageOS. The class is loaded by name from the system
+         server's classloader, which is why aurora-platform-android has to reach
+         PRODUCT_SYSTEM_SERVER_JARS.
+    -->
+    <string-array translatable="false" name="config_deviceSpecificSystemServices">
+        <item>aurora.platform.android.AuroraSystemService</item>
+    </string-array>
+
+</resources>

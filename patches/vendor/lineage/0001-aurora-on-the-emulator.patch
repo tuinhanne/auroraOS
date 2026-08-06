@@ -1,0 +1,36 @@
+Aurora on the emulator product, and nowhere else.
+
+ADR-013: this patch carries the observer, not the subject. Deleting it leaves every Aurora
+artifact unchanged and leaves lineage_beyond2lte carrying Aurora through a device tree Aurora
+owns; what disappears is the ability to watch it start. The day a beyond2lte device exists, this
+file is deleted and no Aurora source changes.
+
+Two lines, and both of them only say that Aurora exists on this product:
+
+  PRODUCT_SYSTEM_SERVER_JARS  puts aurora-platform-android on the system server's classloader,
+                              which is where SystemServer resolves a device-specific service by
+                              name. Appended rather than inserted: the comment on the upstream
+                              declaration says the order is the classpath order, and Aurora
+                              resolves against `services`, so it belongs after it.
+
+  PRODUCT_PACKAGE_OVERLAYS    points at frameworks/base/aurora/overlay, which is Aurora's. The
+                              array naming AuroraSystemService lives there rather than here, so
+                              this patch holds no Aurora decisions.
+
+diff --git a/build/target/product/lineage_sdk_phone_x86_64.mk b/build/target/product/lineage_sdk_phone_x86_64.mk
+--- a/build/target/product/lineage_sdk_phone_x86_64.mk
++++ b/build/target/product/lineage_sdk_phone_x86_64.mk
+@@ -38,4 +38,13 @@
+ PRODUCT_SDK_ADDON_COPY_FILES += \
+     device/generic/goldfish/data/etc/advancedFeatures.ini:images/x86_64/advancedFeatures.ini \
+     device/generic/goldfish/data/etc/encryptionkey.img:images/x86_64/encryptionkey.img \
+     $(EMULATOR_KERNEL_FILE):images/x86_64/kernel-ranchu
++
++# Aurora, on this product only. See ADR-013 in the Aurora tree: the emulator is the only
++# product this checkout can boot, and its makefile is upstream, so observing Aurora start
++# requires a patch that observing it on a real device would not.
++PRODUCT_SYSTEM_SERVER_JARS += \
++    aurora-platform-android
++
++PRODUCT_PACKAGE_OVERLAYS += \
++    frameworks/base/aurora/overlay
