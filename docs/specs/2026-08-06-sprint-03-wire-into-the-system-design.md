@@ -341,6 +341,106 @@ only signal that it did.
 
 ---
 
+## Task 3's measurement, recorded 2026-08-06 — the amendment is not an amendment
+
+Two builds on the VM. Nothing was committed; both candidates were removed by the scripts that
+wrote them.
+
+### Measurement 1 — the candidate against the contract as it stands
+
+```kotlin
+class AuroraSystemService(context: Context) : SystemService(context) { override fun onStart() {} }
+```
+
+```
+AuroraSystemService.kt:3:16: error: unresolved reference 'content'.
+AuroraSystemService.kt:4:8:  error: unresolved reference 'com'.
+AuroraSystemService.kt:7:36: error: unresolved reference 'Context'.
+AuroraSystemService.kt:7:47: error: unresolved reference 'SystemService'.
+```
+
+Two variants failed, `android_common` and `linux_glibc_common` — the second because
+`aurora-platform` is `host_supported: true`, and a host variant can never have Android in it.
+
+### Measurement 2 — a device-only module
+
+```
+java_library {
+    name: "…",
+    static_libs: ["aurora-runtime"],
+    libs: ["services.core"],
+    platform_apis: true,
+    installable: true,
+}
+```
+
+`build completed successfully (08:37)`. Two imports, and no third: `android.content.Context` and
+`com.android.server.SystemService`.
+
+### The predictions
+
+**Held — the surface is substantially smaller than `android.*`.** One package: `android.content.`.
+
+**Refuted — the amendment is *not* two lines**, and the way it failed is worth more than the
+prediction was. `forbid-dep: services` does not need relaxing, because it never applied.
+`arch-test.sh` matches with `grep -qE "\"$dep\""` — the pattern carries both quotes — so
+`libs: ["services.core"]` does not contain `"services"`.
+
+**And that is not a gate defect.** The matcher does exactly what the contract says: it forbids a
+named module, and `services.core` is a different module that was never named. `runtime.contract`
+settles the convention by example — it enumerates `framework` **and** `framework-minus-apex`, two
+members of one family, listed separately because the file names modules rather than prefixes.
+
+So the finding is a **contract that names one member of a family**, and it is not about Android at
+all: `aurora-platform` could depend on `services.core` today and no gate would say a word. It needs
+fixing whether or not anything here proceeds, which is why it is not part of the decision below.
+
+### What was not predicted at all, and it changes the deliverable
+
+**The hook cannot live in `aurora-platform`.** Three properties of that module each block it
+independently:
+
+| property | why it blocks the hook |
+|---|---|
+| `host_supported: true` | a linux_glibc variant exists and can never resolve `android.` |
+| `sdk_version: "core_current"` | no Android on the classpath, and `arch-test.sh` **fails any module that changes it** — *"the classpath guarantee is gone"* |
+| `aurora-platform-tests` statically links it | the `java_test_host` running all 356 tests would lose its dependency the moment the module went device-only |
+
+And a fourth, about the gate rather than the module: `arch-test.sh` reads **one** `source-root` per
+contract (`value_of`, not `values_of`). A second source directory under the same contract would be
+**invisible to the gate** — Android would enter the tree at exactly the point nothing was watching.
+
+### What the measurement proves, stated no wider than it is
+
+> **`aurora-platform` cannot hold the hook and keep all three of the roles it currently plays:
+> host-supported, `core_current`, and the static dependency of the host test module.**
+
+That is the whole of it. It says the build graph has to change; it does **not** say how, and it
+names no module.
+
+**A fourth module is one way and not the only one.** The measurement refutes none of these:
+
+| | |
+|---|---|
+| split `aurora-platform` into host and device variants | Soong supports per-variant properties; nothing here tested whether they reach far enough |
+| separate the API from the implementation, and let only the implementation see Android | the layering Aurora already uses one level down |
+| a fourth module | the shape the compiler happened to make cheapest to measure |
+| something else Soong offers | nobody has surveyed |
+
+The last row is the honest one. Measurement 2 used a new module because a new module was the fastest
+way to ask the compiler a question — **not** because the alternatives had been weighed. Reading the
+instrument's shape as the answer would be taking the first option the tooling made convenient.
+
+### Recorded rather than acted on
+
+A change to the build graph is an architectural decision and not a task's to make quietly. Task 3
+stops at the measurement.
+
+What the measurement buys is that the decision is now cheap: the compiler has already said the
+surface is two imports wide, so no part of the choice rests on a guess about scope.
+
+---
+
 ## 4. What this sprint will not do
 
 - **No `ChoreographerFrameScheduler`.** That is Sprint 08, and it needs what this sprint produces.
