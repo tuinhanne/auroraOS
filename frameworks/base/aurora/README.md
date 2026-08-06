@@ -351,7 +351,7 @@ script can decide.
 |---|---|---|
 | `aurora.sdk.time` | concepts and contracts | `Duration`, `Timeline`, `FrameTime`, `TimeSource`, `AuroraClock`, `FrameScheduler` |
 | `aurora.runtime.time` | portable implementations | `RealtimeClock`, `TestClock`, `QueuedFrameScheduler`, `ImmediateFrameScheduler`, `TimelineDriver` |
-| `aurora.platform.time` | the Android bridge | `ChoreographerFrameScheduler` — Sprint 08 |
+| `aurora.platform.android` | the Android bridge | `ChoreographerFrameScheduler` — Sprint 08 |
 
 ### Animation, in the same three tiers
 
@@ -359,7 +359,7 @@ script can decide.
 |---|---|---|
 | `aurora.sdk.animation` | concepts and contracts | `Animation`, `AnimationSpec`, `AnimationState`, `AnimationHandle`, `MotionSample`, `MotionSampler`, `Animator`, `AnimationController`, `Interpolator` |
 | `aurora.runtime.animation` | the engine | `AnimationStateMachine`, `ExecutionTimeline`, `TimedSampler`, `AnimationRegistry`, `AnimationHandleImpl`, `DefaultAnimator`, `DefaultAnimationController`, `AnimationDriver` |
-| `aurora.platform.animation` | the Android bridge | `ChoreographerAnimationDriver` — Sprint 08 |
+| `aurora.platform.android` | the Android bridge | `ChoreographerAnimationDriver` — Sprint 08 |
 
 Sprint 06A builds the lifecycle and leaves the motion. There is no solver: `TimedSampler` is
 the only `MotionSampler`, and it delegates to `Timeline`. Sprint 06B.0 settles what a solver *is*
@@ -611,8 +611,14 @@ to be.
 can land beside any of these sprints.
 
 **Sprint 08 — Android platform bridge.** `ChoreographerFrameScheduler` and
-`ChoreographerAnimationDriver` in `aurora.platform`. `AnimationController.tick(FrameTime)` is
-already the entry point, so this is an adapter rather than a rework.
+`ChoreographerAnimationDriver`. `AnimationController.tick(FrameTime)` is already the entry point,
+so this is an adapter rather than a rework.
+
+**Updated 2026-08-06.** They go in `aurora.platform.android`, not `aurora.platform` — the fourth
+layer ADR-012 created, which is the only module that may import `android.`. That layer now exists,
+is device-only, and has a contract of its own with a measured allow list, so Sprint 08 adds a file
+rather than a boundary. Its imports will widen that list by whatever the compiler demands and
+nothing else.
 
 **Later — Gesture work.** iOS-style gesture customisation belongs in `aurora.platform`, acting
 on `SystemUI` and Launcher3 QuickStep. Because gesture code lives in the framework layer and
