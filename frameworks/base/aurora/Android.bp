@@ -103,6 +103,24 @@ java_library {
     libs: ["services.core"],
     platform_apis: true,
     installable: true,
+
+    // Installed to system_ext, not system.
+    //
+    // Found by a build rather than by design. Installing into system/framework put Aurora inside
+    // generic_system.mk's artifact path requirement, and AOSP refused:
+    //
+    //   internal error: Device makefile produces files inside
+    //   build/make/target/product/generic_system.mk's artifact path requirement.
+    //
+    // The requirement exists to keep the generic system image the same everywhere, and Aurora is
+    // by definition not part of that - it is an addition this OS makes. system_ext is the
+    // partition for exactly that, and the platform already has the matching classpath variable:
+    // PRODUCT_SYSTEM_SERVER_JARS_EXTRA, which device/google/atv uses the same way for tv-services.
+    //
+    // The escape hatch was PRODUCT_ARTIFACT_PATH_REQUIREMENT_ALLOWED_LIST. It would have worked
+    // and it would have been an exemption from a rule Aurora has no argument with.
+    system_ext_specific: true,
+
     visibility: ["//frameworks/base/aurora:__subpackages__"],
 }
 

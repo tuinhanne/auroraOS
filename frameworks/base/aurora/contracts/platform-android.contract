@@ -48,6 +48,12 @@ allow-import:   com.android.server.SystemService
 # uses the same broadcast. One package, and the compiler asked for it.
 allow-import:   android.media.
 
+# Added by Task 4.4b for one reason: a boot that proves nothing is not worth booting. An
+# AuroraSystemService that started silently would look exactly like one that never started, and
+# the whole point of the exercise is telling those apart. android.util.Log rather than
+# android.util.Slog, which is @hide.
+allow-import:   android.util.
+
 # org.lineageos. is forbidden rather than merely absent. Task 2 chose AOSP's
 # config_deviceSpecificSystemServices over LineageOS's config_externalLineageServices precisely so
 # that Aurora depends on Android and not on LineageOS, and a dependency floor that is only a habit

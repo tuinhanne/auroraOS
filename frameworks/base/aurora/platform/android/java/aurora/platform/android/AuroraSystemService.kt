@@ -17,6 +17,9 @@
 package aurora.platform.android
 
 import android.content.Context
+import android.util.Log
+import aurora.sdk.service.VolumeService
+import aurora.sdk.service.VolumeStream
 import com.android.server.SystemService
 
 /**
@@ -50,23 +53,55 @@ import com.android.server.SystemService
  * absent from the classpath instead of merely unused. A later change that pulls `android.content.`
  * into the host-verifiable half is a compile error rather than something review has to notice.
  *
- * ## Not wired to anything yet
+ * ## It says something, because silence proves nothing
  *
- * Sprint 03 Task 4.1 introduces the layer and nothing else. `onStart` publishes no service and the
- * runtime is not constructed here; the device overlay does not name this class, and no makefile
- * puts this module on the system server's classpath. It is reachable by nothing, on purpose, so
- * that the build-graph change can be verified on its own before anything can affect boot.
+ * `onStart` was empty until Task 4.4b, and an empty one would have made Boot PASS worthless: a
+ * device that boots with a silent Aurora is indistinguishable from one where the overlay did not
+ * apply, the jar never reached the classpath, or the class was never named. All four look like a
+ * phone that works.
+ *
+ * So each stage reports itself, and each is caught separately. `SystemServer` already wraps this
+ * whole call in `try/catch → reportWtf`, which keeps a failure from bootlooping; the inner catch
+ * exists so that a failure is described by **Aurora** — naming which stage and why — rather than
+ * arriving as a stack trace attributed to a class name.
+ *
+ * Still publishes no binder service. Reaching the runtime's registry is later work; what this
+ * proves is that the class loads, constructs, and can build its own service graph inside
+ * `system_server`.
  */
 class AuroraSystemService(context: Context) : SystemService(context) {
 
     /**
      * Called by `SystemServiceManager` once this service has been constructed.
      *
-     * Empty until Task 4.3. What belongs here is the runtime's construction and the registration
-     * of its services — and both need `AuroraContext.hostContext()` to stop being `Object` first,
-     * which is Task 4.2.
+     * Three facts, in the order they become knowable: that the class was reached at all, that the
+     * provider can be built, and that a service resolved through it can answer a real question
+     * about the device. The third is the one that exercises everything — `AndroidVolumeSource`
+     * asking `AudioManager` for a level it did not make up.
      */
     override fun onStart() {
-        // Deliberately empty. See the class documentation.
+        Log.i(TAG, "onStart: Aurora is running inside system_server")
+        try {
+            val provider = AndroidServiceProvider(context)
+            val volume = provider.find(VolumeService::class.java)
+            if (volume == null) {
+                Log.w(TAG, "volume service did not resolve")
+                return
+            }
+            Log.i(
+                TAG,
+                "volume service resolved: media=" + volume.levelOf(VolumeStream.MEDIA) +
+                    " steps=" + volume.stepCountOf(VolumeStream.MEDIA) +
+                    " active=" + volume.activeStream
+            )
+        } catch (t: Throwable) {
+            // Reported here as well as by SystemServer, because SystemServer's message names the
+            // class it was starting and this one names what Aurora was doing when it failed.
+            Log.e(TAG, "building the service graph failed", t)
+        }
+    }
+
+    private companion object {
+        const val TAG = "Aurora"
     }
 }

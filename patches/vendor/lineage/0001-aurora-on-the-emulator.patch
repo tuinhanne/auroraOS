@@ -5,13 +5,38 @@ artifact unchanged and leaves lineage_beyond2lte carrying Aurora through a devic
 owns; what disappears is the ability to watch it start. The day a beyond2lte device exists, this
 file is deleted and no Aurora source changes.
 
-Two lines, and both of them only say that Aurora exists on this product:
+Three settings, and all of them only say that Aurora exists on this product:
 
-  PRODUCT_SYSTEM_SERVER_JARS  puts aurora-platform-android on the system server's classloader,
+  PRODUCT_PACKAGES            installs the jar. Added after the first build failed, and the
+                              failure is worth keeping: declaring a system server jar without
+                              installing it produces no dexpreopt artifacts, and AOSP's
+                              dex_preopt_check refuses the build rather than shipping a classpath
+                              entry with nothing behind it.
+
+                                Offending entries:
+                                  system/framework/oat/x86_64/aurora-platform-android.odex
+                                  system/framework/oat/x86_64/aurora-platform-android.vdex
+
+                              Classpath membership and installation are separate facts, and only
+                              a real build says so.
+
+  PRODUCT_SYSTEM_SERVER_JARS_EXTRA
+                              puts aurora-platform-android on the system server's classloader,
                               which is where SystemServer resolves a device-specific service by
-                              name. Appended rather than inserted: the comment on the upstream
-                              declaration says the order is the classpath order, and Aurora
-                              resolves against `services`, so it belongs after it.
+                              name. The _EXTRA variant, and the system_ext: prefix, because the
+                              second build failed on this:
+
+                                internal error: Device makefile produces files inside
+                                build/make/target/product/generic_system.mk's artifact path
+                                requirement.
+
+                              Installing into system/framework put Aurora inside a requirement
+                              that exists to keep the generic system image identical everywhere.
+                              Aurora is by definition not part of that image, system_ext is the
+                              partition for what a product adds, and device/google/atv already
+                              reaches the classpath the same way for tv-services. The alternative
+                              was an entry in PRODUCT_ARTIFACT_PATH_REQUIREMENT_ALLOWED_LIST -
+                              an exemption from a rule Aurora has no argument with.
 
   PRODUCT_PACKAGE_OVERLAYS    points at frameworks/base/aurora/overlay, which is Aurora's. The
                               array naming AuroraSystemService lives there rather than here, so
@@ -20,7 +45,7 @@ Two lines, and both of them only say that Aurora exists on this product:
 diff --git a/build/target/product/lineage_sdk_phone_x86_64.mk b/build/target/product/lineage_sdk_phone_x86_64.mk
 --- a/build/target/product/lineage_sdk_phone_x86_64.mk
 +++ b/build/target/product/lineage_sdk_phone_x86_64.mk
-@@ -38,4 +38,13 @@
+@@ -38,4 +38,16 @@
  PRODUCT_SDK_ADDON_COPY_FILES += \
      device/generic/goldfish/data/etc/advancedFeatures.ini:images/x86_64/advancedFeatures.ini \
      device/generic/goldfish/data/etc/encryptionkey.img:images/x86_64/encryptionkey.img \
@@ -29,8 +54,11 @@ diff --git a/build/target/product/lineage_sdk_phone_x86_64.mk b/build/target/pro
 +# Aurora, on this product only. See ADR-013 in the Aurora tree: the emulator is the only
 +# product this checkout can boot, and its makefile is upstream, so observing Aurora start
 +# requires a patch that observing it on a real device would not.
-+PRODUCT_SYSTEM_SERVER_JARS += \
++PRODUCT_PACKAGES += \
 +    aurora-platform-android
++
++PRODUCT_SYSTEM_SERVER_JARS_EXTRA += \
++    system_ext:aurora-platform-android
 +
 +PRODUCT_PACKAGE_OVERLAYS += \
 +    frameworks/base/aurora/overlay
