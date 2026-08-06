@@ -165,6 +165,87 @@ order Sprint 02 established when it built `arch-test.sh` before there was anythi
 
 ---
 
+## Task 2's result, recorded 2026-08-06 — **no upstream patch is needed**
+
+Question 0 answered by survey of the AOSP checkout. **`SystemServer` is not the answer**, and the
+constraint in §2 is what made the answer findable: opening with *how do we modify `SystemServer`*
+would have sent the survey to `SystemServer` and stopped there.
+
+### Two config-driven hooks exist, and Aurora already owns the files that drive them
+
+**Hook 1 — AOSP's own device-specific services array.**
+
+```java
+// SystemServer.java:3254
+t.traceBegin("StartDeviceSpecificServices");
+final String[] classes = mSystemContext.getResources().getStringArray(
+        R.array.config_deviceSpecificSystemServices);
+for (final String className : classes) {
+    try {
+        mSystemServiceManager.startService(className);
+    } catch (Throwable e) {
+        reportWtf("starting " + className, e);
+    }
+}
+```
+
+`config_deviceSpecificSystemServices` is declared empty in
+`frameworks/base/core/res/res/values/config.xml:5450`, and
+`device/samsung/beyond2lte/overlay/frameworks/base/core/res/res/values/config.xml` — 45 lines,
+Aurora's own tree, already synced — is a resource overlay that can fill it. It does not declare the
+array today.
+
+**Hook 2 — LineageOS's external system server**, which turns out to be a patch someone else already
+carries. `SystemServer.java:3108` reads `org.lineageos.platform.internal.R.string.config_externalSystemServer`
+and reflectively invokes `LineageSystemServer.run()`, which walks
+`config_externalLineageServices` and starts each entry. `frameworks/base`'s remote is
+`LineageOS/android_frameworks_base`, so that call site is inherited rather than owed.
+`device/samsung/beyond2lte/overlay/lineage-sdk` exists, so the array is overridable without a patch
+too.
+
+### The four questions, answered for Hook 1
+
+| | |
+|---|---|
+| **when does it run** | after `DisplayManagerService.systemReady`, immediately before `PHASE_DEVICE_SPECIFIC_SERVICES_READY`. Package manager, power, display and a system `Context` all exist by then |
+| **what does it have** | `mSystemContext`, a real `Context` — exactly what `AuroraContext.hostContext()` needs in order to stop being `Object` |
+| **what does it cost across a rebase** | **nothing.** There is no patch to re-apply, because there is no patch |
+| **what happens when Aurora fails** | `catch (Throwable e) { reportWtf(...) }`. A WTF in the log, not a bootloop — and structurally, rather than because whoever wrote the integration remembered to guard it |
+
+The fourth is the one §2 called most likely to be skipped, and it is the strongest argument for a
+hook over an edit: a hand-written call in `SystemServer` would have to carry its own try/catch, and
+would be one review away from not carrying it.
+
+### Why Hook 1 over Hook 2
+
+Hook 2 requires extending `org.lineageos.platform.internal.LineageSystemService`, implementing
+`getFeatureDeclaration()`, and having that feature declared on the device — so Aurora's platform
+layer would bind to **LineageOS** rather than to **Android**. RULE-002 says Android is confined to
+`aurora.platform`; it does not say LineageOS is, and widening it that way is a decision this sprint
+has no reason to make. Hook 1 binds to `com.android.server.SystemService`, which is the thing
+`aurora.platform` already exists to know about.
+
+### What it costs instead, and where
+
+One real cost, and it is in a tree Aurora owns rather than one it does not:
+`SystemServiceManager.startService(String)` resolves the class on the system server's classloader,
+so `aurora-platform` has to be on `SYSTEMSERVERCLASSPATH`. That means `installable: false` changes
+and the device makefile appends to `PRODUCT_SYSTEM_SERVER_JARS` — a mechanism with precedent in
+this checkout (`device/google/cuttlefish`, `packages/services/Car`, `device/google/atv`).
+
+### The consequence for Phase A
+
+**ADR-011 gets no consumer in this sprint.** `patches/` stays empty, and the machinery Task 1 built
+goes unused.
+
+That is the outcome §2 said would not invalidate anything, and it is worth being plain about: Task 1
+was not wasted, and it was also not vindicated. It will be worth having the first time something
+upstream genuinely has to change, and this sprint is not it. Had Task 1 come second, the survey
+would have run under pressure to justify the machinery already built — which is the same shape as
+the trap Task 1 itself avoided, one level up.
+
+---
+
 ## 4. What this sprint will not do
 
 - **No `ChoreographerFrameScheduler`.** That is Sprint 08, and it needs what this sprint produces.
