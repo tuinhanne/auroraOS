@@ -46,6 +46,12 @@ import aurora.sdk.event.Disposable
  * `AnimationController.tick`, which on device is the frame thread. The queries are volatile
  * reads and are safe from anywhere.
  *
+ * **Sprint 08 measured which thread that is: `system_server`'s main thread**, the one with the
+ * main `Looper`. `Choreographer` is per-`Looper` and creates one on demand, so a caller on a
+ * second thread would not fail — it would start a second frame stream and drive handles from it.
+ * `ChoreographerFrameScheduler` refuses that rather than allowing it, which turns this paragraph
+ * from advice into something enforced.
+ *
  * This is a contract, not an oversight. Making the engine thread safe would mean locking on the
  * path that runs for every animation on every frame, to serve callers who almost always are on
  * the frame thread already. A caller genuinely elsewhere should post to the frame thread rather
