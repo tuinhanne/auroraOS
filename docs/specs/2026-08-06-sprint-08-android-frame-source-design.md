@@ -189,6 +189,85 @@ cannot produce the evidence for it.
 
 ---
 
+## Task 4's result, recorded 2026-08-06 — a frame arrived, and the cadence is a finding
+
+```
+22:51:39.709  task4 scheduler built, frameIntervalNanos=16666665
+22:51:39.711  task4 driver started; registry=0
+22:51:39.719  task4 played; registry=1
+22:51:43.490  task4 state SCHEDULED -> RUNNING after 0 ticks
+22:51:43.490  task4 tick=0 elapsedMs=0   value=0.0        velocity=-0.0
+22:51:43.867  task4 tick=1 elapsedMs=383 value=100.2787   velocity=-4.387105
+22:51:44.447  task4 tick=2 elapsedMs=966 value=100.000015 velocity=-1.9077424E-4
+22:51:44.447  task4 state RUNNING -> COMPLETED after 3 ticks
+```
+
+### What worked
+
+**`frameIntervalNanos=16666665`** — 60.000006 Hz, read from the default display through
+`DisplayManager`, not guessed. The lookup works from `system_server`'s non-display context.
+
+**Frames reached the engine.** `Choreographer` → `ChoreographerFrameScheduler` → `AnimationDriver`
+→ `AnimationController.tick` → sampler → listener, all of it on a device. Question 0's *adapter*
+claim is now verified end to end rather than argued.
+
+**The solver ran, and the numbers prove it rather than merely permitting it:**
+
+```
+tick=1   value=100.2787      overshoot above the target
+tick=2   value=100.000015    settled back
+```
+
+**A linear interpolation cannot exceed its target.** The overshoot is a spring's signature, and it
+is the one shape that cannot be produced by a driver that is delivering frames while the solver
+does nothing.
+
+### What did not, and it is the more useful half
+
+**Three ticks in 966 ms.** At 60 Hz that window holds about fifty-eight. And the first frame arrived
+**3.771 seconds** after `play()`.
+
+| | |
+|---|---|
+| `played` → first frame | 3.771 s |
+| tick 0 → 1 | 0.377 s |
+| tick 1 → 2 | 0.580 s |
+
+**Task 1's log shows the same opening gap**, from a completely different build: its callback was
+posted at 21:27:08.779 and its first frame logged at 21:27:12.396 — 3.617 s. And then Task 1
+recovered to roughly 57 frames per second and stayed there.
+
+So: **the frame source starves during early boot and recovers afterwards.** Two independent
+measurements, the same shape.
+
+*Why* is not established. `system_server` is starting everything it owns, SurfaceFlinger may not be
+fully up, and the emulator renders through swiftshader — any of those would do it, and this
+measurement cannot separate them.
+
+### The engine did not care, and that is not luck
+
+Three samples across a second, spaced unevenly, and the animation still finished at 100.000015
+rather than somewhere arbitrary. That is `ExecutionTimeline` measuring elapsed from **timestamps**
+rather than counting frames, and `FrameScheduler`'s KDoc insisting on it:
+
+> *"Always measure from the [FrameCallback] timestamps instead of accumulating this value, or the
+> animation will drift."*
+
+An engine that had accumulated `frameIntervalNanos` would have believed 3 × 16.67 ms had passed —
+50 ms — and would be 5% into a spring that had actually finished. The advice was written before any
+frame source existed, and the first real one delivered exactly the conditions it was written for.
+
+### What this means for Sprint 09
+
+**Do not animate at boot.** Anything Aurora shows during `onStart` will be sampled a handful of
+times and look like a slideshow, no matter how correct the solver is.
+
+This does not threaten the volume overlay: its trigger is a hardware key, which happens long after
+boot, in the window Task 1 measured at ~57 fps. But it is worth recording before somebody adds a
+splash animation and blames the engine.
+
+---
+
 ## What this sprint will not do
 
 - **Nothing is drawn.** A frame source makes frames arrive; it puts no pixel anywhere. Sprint 09 is
