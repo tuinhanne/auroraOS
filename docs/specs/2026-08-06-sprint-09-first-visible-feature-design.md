@@ -186,6 +186,136 @@ holds, and the allow list grows by what a compiler demands.
 
 ---
 
+## Task 2's result, recorded 2026-08-07 — **inside SystemUI, through a door AOSP already built**
+
+### What was looked at, including what turned out not to exist
+
+The survey ran in four passes over the real tree on the build VM, and two of them found nothing —
+recorded because exit criterion 2 asks for it, and because the misses are the reason the last pass
+was needed at all.
+
+| looked for | found |
+|---|---|
+| how AOSP's volume dialog is constructed | `VolumeDialogImpl`, `VolumeDialogComponent`, `VolumeModule` |
+| whether that dialog is replaceable | **yes** — `VolumeDialog` is a plugin interface, and AOSP's own dialog is registered as its *default* |
+| `PluginManagerImpl.java`, `PluginActionManager.java` | **do not exist.** They are `.kt`, and they live in `SystemUI/shared/`, not `SystemUI/src/` |
+| `isPrivileged` in `shared/plugins/` | **not there.** It is on `PluginManager.Config` in `plugin_core/` |
+| whether Aurora already owns anything inside SystemUI | a `dimens.xml` overlay under `device/samsung/beyond2lte/overlay/` |
+
+The two misses are the same mistake twice: **guessing a path from a class name.** Both were found by
+searching for content instead — the fourth pass looked for the permission string and the debuggable
+check, not for filenames, and located the machinery immediately.
+
+### The finding that decides it
+
+`VolumeDialogComponent.java:95`:
+
+```java
+extensionController.newExtension(VolumeDialog.class)
+        .withPlugin(VolumeDialog.class)
+        .withDefault(() -> volumeDialog)
+        .withCallback(dialog -> {
+            if (mDialog != null) {
+                mDialog.destroy();
+            }
+            mDialog = dialog;
+            mDialog.init(LayoutParams.TYPE_VOLUME_OVERLAY, mVolumeDialogCallback);
+        }).build();
+```
+
+**AOSP's volume dialog is not the implementation. It is the fallback behind an extension point.**
+When a plugin supplying `VolumeDialog` appears, the callback fires, the old dialog is `destroy()`ed
+and the new one is `init`'d with the same window type and the same callback.
+
+That answers §3's third column outright, and it is the column that mattered:
+
+| candidate | verdict |
+|---|---|
+| a window from `system_server` | **refuted.** It buys the double-overlay problem — two dialogs on one key press — and then has to solve it by suppressing UI that belongs to another process |
+| **inside `SystemUI`** | **chosen.** The replacement is `destroy()`-then-`init`, performed by AOSP's own code. There is nothing to suppress and no upstream patch |
+| Launcher / QuickStep | **refuted**, as expected. It owns no volume surface and the README's mention of it concerns gestures |
+
+The §3 note asked whether an Aurora component in SystemUI is *an upstream patch or a package the
+product adds*. It is the second, and that was not a foregone conclusion — it is true only because
+the extension point already exists. Had it not, this candidate would have carried a patch to
+`frameworks/base` and ADR-013's observer/subject distinction would have had something real to say.
+
+### The two gates, and only one of them was visible from here
+
+A plugin is an ordinary APK: `<uses-permission android:name="com.android.systemui.permission.PLUGIN" />`
+plus a `<service>` filtering the plugin's action, which comes from the interface's
+`@ProvidesInterface` annotation. `ExamplePlugin/Android.bp` shows the build shape —
+`certificate: "platform"`, `libs: ["SystemUIPluginLib"]`, `platform_apis: true`.
+
+**Gate one — signature.** SystemUI declares that permission `protectionLevel="signature"`, so the
+plugin must be signed with the platform key. In a ROM Aurora builds, that is not an obstacle.
+
+**Gate two — the build variant, and this is the one worth the sprint.**
+`PluginActionManager.kt:222` and `PluginInstance.kt:301`:
+
+```kotlin
+if (!buildInfo.isDebuggable && !config.isPrivileged(component)) { ... }
+```
+
+On a **user** build, an unprivileged plugin is refused. `PluginManager.Config` gets its privileged
+list from one place — `PluginsModule.java:99`:
+
+```java
+String[] plugins = context.getResources().getStringArray(R.array.config_pluginAllowlist);
+```
+
+**A string-array resource.** The same shape as `config_deviceSpecificSystemServices`, which is how
+Sprint 03 put Aurora into `system_server` — a hook filled from an overlay rather than a patch. And
+Lineage has already used it, in `vendor/lineage/overlay/common/.../SystemUI/res/values/config.xml`:
+
+```xml
+<string-array name="config_pluginAllowlist" translatable="false">
+    <item>com.android.systemui</item>
+    <item>com.android.systemui.plugin.globalactions.wallet</item>
+    <item>org.lineageos.settings.device</item>
+</string-array>
+```
+
+That third entry is a vendor adding its own plugin to the allowlist in this very checkout. It is a
+description of precedent, not a standard — but it means Aurora's move here is one the tree already
+makes.
+
+### The trap this pass avoided, which is the whole reason it ran
+
+**The emulator is `userdebug`, so `isDebuggable` is true, so the gate never fires there.** A plugin
+that works perfectly on every device this project can currently boot would be silently refused on a
+`user` build — and the failure would be invisible, because the plugin simply never loads and AOSP's
+default keeps working. The overlay would just be *absent*.
+
+This is RULE-018's point arriving in a new place: the measuring instrument is more permissive than
+the thing being measured, so passing on the instrument proves nothing about the target. Sprint 08
+Task 1 caught the same shape once already. **It was caught here by reading the gate, not by running
+anything** — no available machine can ask this question, and that is exactly why the allowlist entry
+has to be written now rather than when a `user` build first fails.
+
+### What this costs Aurora, stated before Task 3 spends it
+
+- **A new build module.** The plugin is an `android_app`, not a jar — the first APK Aurora has. Where
+  it sits relative to `aurora.platform.android` is a real fork (a fourth-layer sibling, or a fifth
+  thing that is not a layer at all), and ADR-012's rule says the answer is settled by the build
+  graph. **Task 3 opens with that decision and it is ADR-shaped.** It is not made here.
+- **A second overlay directory.** `frameworks/base/aurora/overlay` currently holds only
+  `core/res/res/values/config.xml`. The allowlist entry needs
+  `.../packages/SystemUI/res/values/config.xml` beside it — Aurora's own overlay root, so no patch.
+- **The `android.view.` allowance stops being theoretical.** `platform-android.contract` already
+  flags it as the one to watch; a `VolumeDialog` implementation is a view hierarchy, and this is
+  where that note gets tested.
+
+### What the survey did **not** establish
+
+That a plugin actually replaces the dialog end to end. The survey proves the mechanism exists, is
+reachable without a patch, and has a precedent in-tree. **Whether Aurora's plugin loads, replaces,
+and draws is Task 3's result, not this one's** — and the first thing Task 3 should check is that
+AOSP's dialog stopped appearing, because a plugin that fails to load looks exactly like a plugin
+that was never written.
+
+---
+
 ## 4. Question 2 — does the first pixel need animation at all?
 
 The most useful decomposition available, and it is easy to miss because Aurora's animation runtime
@@ -243,9 +373,10 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
 
 ## 7. Exit criteria
 
-- [ ] Question 0 answered against stated criteria, with a real alternative weighed
-- [ ] Question 1 answered by survey, with what was looked at recorded — including whatever turned
-      out not to exist
+- [x] Question 0 answered against stated criteria, with a real alternative weighed — **the volume
+      overlay**, against the notification chip, and the surprise test was applied first
+- [x] Question 1 answered by survey, with what was looked at recorded — including whatever turned
+      out not to exist. **Inside SystemUI, as a plugin**; the two misses are recorded above
 - [x] Question 2 answered — **animated**, and Sprint 08 was named as the prerequisite rather
       than something discovered mid-task
 - [ ] Something is visible on a device, and a person has looked at it
