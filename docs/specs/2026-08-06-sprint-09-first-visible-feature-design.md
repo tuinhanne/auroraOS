@@ -73,6 +73,77 @@ afterwards — by then the winner looks inevitable regardless of how it was chos
 
 ---
 
+## Task 1's result, recorded 2026-08-06 — **the volume overlay, and the comparison was between two**
+
+### The surprise test, applied before comparing
+
+§2 requires this stated in advance, because it cannot be applied afterwards. Asked of each candidate
+*before* any criterion was scored:
+
+| candidate | would anybody be surprised if it won? |
+|---|---|
+| static diagnostic surface | **yes** — it is the option that exists to make the sprint easy |
+| "Aurora" watermark | **yes** — nobody has ever asked for it |
+| notification chip | **no** |
+| volume overlay | **no** |
+
+**So the real comparison was between two**, and that is recorded rather than hidden. A four-way
+table would have made the result look better-tested than it was; two candidates that could each
+plausibly win is a comparison, and it is what this one had.
+
+### Why the other two failed, and it was the first criterion
+
+Not on cost. On *"wanted for its own sake"* — the rule 06C.0 established one level down.
+
+**The static surface is the forbidden artifact, at feature scale.** It would exist so that the
+drawing path could be proven, which is precisely *a subject created for an assertion*. The sprint
+that built it would satisfy exit criterion 4 — something visible, a person looked — and fail
+criterion 5 in the same motion.
+
+It survives as something else, and the distinction is worth keeping: **a debugging affordance is not
+a feature.** If Aurora later wants a way to see that it is alive, that is a developer tool, judged by
+whether it aids debugging, not by whether anyone wants it on their phone.
+
+**The watermark fails twice.** Nobody wants it, and it fails the second criterion in a way the others
+do not: a transient overlay that is wrong disappears, while a permanent mark that is wrong is
+permanently wrong. It also asks a question the project is not ready to answer — what Aurora may put
+on someone's screen unasked — and asking it through an implementation is the wrong order.
+
+### Notification chip against volume overlay
+
+The genuine comparison. Both are wanted, both are transient, both are judgeable.
+
+| | notification chip | volume overlay |
+|---|---|---|
+| wanted for its own sake | yes — `IslandService` exists, ADR-003 names Dynamic Island | yes — every phone has one, and ADR-003 names it too |
+| failure visible, not catastrophic | yes | yes |
+| **one surface, not a layout system** | **no** — a chip carries an icon, text, and probably progress. It is a small layout, and the first pixel would also be the first view hierarchy | **yes** — a level indicator is one shape and one number |
+| judged by looking | yes, but needs a notification to arrive | **yes, and by anyone** — the hardware keys are the trigger. No instrumentation, no waiting for an event |
+| what is already built | nothing. `NotificationService` is an unimplemented interface, and reaching real notifications means `NotificationListenerService` and a new span of Android surface | **the entire non-visual half.** `DefaultVolumeService`, 17 host tests, `AndroidVolumeSource`, and a real `AudioManager` answering on a device |
+
+**The third row decides it and the fifth confirms it.** The chip would make the first visible thing
+also the first layout, and its data source does not exist. The overlay's data source was verified on
+a device this morning; what is missing is exactly one thing, which is what a first pixel should be.
+
+That last point is the whole reason this comparison was worth holding rather than assumed:
+**volume wins because everything except the surface is already true, not because it had a spec
+written.** Had the chip's service been implemented instead, the same criteria would have picked the
+chip.
+
+### And it drags Sprint 08 in, which Question 2 predicted
+
+`volume-overlay.md` §4 requires that a run of presses leaves the overlay visibly one object — no
+replayed entrance, the indicator moving from where it is, no blink when a press interrupts a fade.
+Those are motion requirements. Motion on a device needs `ChoreographerFrameScheduler`, which is
+Sprint 08 and does not exist.
+
+**So the answer to Question 2 is yes**, and it is a consequence of Question 0's answer rather than a
+separate decision. A static first version is available and is not taken: it would ship the behaviour
+`volume-overlay.md` §4 exists to forbid, and shipping a known-wrong version to make a sprint fit is
+the same failure as building a subject to make an assertion possible.
+
+---
+
 ## 3. Question 1 — where does Aurora draw from?
 
 Aurora currently lives in `system_server`. That is where it *starts*; it is not obviously where it
