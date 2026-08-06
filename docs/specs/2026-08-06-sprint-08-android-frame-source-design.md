@@ -101,6 +101,94 @@ for the process's life, or follows display state, is the other half of Question 
 
 ---
 
+## Task 1's result, recorded 2026-08-06
+
+One boot, one instrument, three questions. Two answered, one refuted its own applicability — and
+the refutation came from a number the instrument was not built to produce.
+
+### Question 3 — answered: the main thread, and it has a Looper
+
+```
+08-06 21:27:08.776   766   766 I Aurora : measure thread=main looper=true isMain=true
+08-06 21:27:08.779   766   766 I Aurora : measure: posted the first frame callback
+```
+
+`onStart` runs on `system_server`'s **main thread**, which is the main `Looper`, and
+`Choreographer.getInstance()` succeeded there. So the frame thread is not something Aurora has to
+create or choose — it is the thread it is already started on.
+
+That answers the sentence in `AnimationHandle` that was written before a frame thread existed:
+*"the same thread that drives `AnimationController.tick`, which on device is the frame thread"*. It
+is `system_server`'s main thread, and callers must be on it.
+
+### Question 1 — answered while awake, and the interesting half is unreachable
+
+`frameTimeNanos` tracks the same timebase as `System.nanoTime()`, behind it by the compose lag the
+platform documents:
+
+```
+n=0      frameTimeNanos=119082629916  nanoTime=119093689300   lag 11.06 ms
+n=3420   frameTimeNanos=182549294044  nanoTime=182550974400   lag  1.68 ms
+```
+
+Always behind, never ahead, by a varying amount — which is what *"the time the frame started being
+composed"* should look like. `FrameScheduler`'s KDoc claim survives.
+
+**But the measurement cannot distinguish `nanoTime` from `elapsedRealtimeNanos`**, because on this
+device they never disagreed. That distinction only appears across a suspend, which brings us to:
+
+### Question 2 — NOT answered, and the instrument says why
+
+Frames did not stop. The display slept — `dumpsys power` reported `mWakefulness=Asleep` — and the
+callback kept arriving at roughly 57/second for the whole 41-second window.
+
+**Pre-registered before the data arrived: this is the ambiguous direction.** "Frames kept coming"
+does not distinguish *`Choreographer` ignores display state* from *the emulator never really stopped*.
+
+**And the instrument settled it against itself**, using two clocks it was logging for the other
+question:
+
+```
+elapsedRealtimeNanos − uptimeNanos      (grows by exactly the time the CPU spent suspended)
+
+  before screen off          10,100 ns
+  after 16 s of "sleep"      23,200 ns
+  growth across the window   13,100 ns  =  0.013 ms
+```
+
+**A real 41-second suspend would have shown about 41,000,000,000 ns.** It showed thirteen
+microseconds, which is the jitter between two consecutive syscalls. The CPU never slept. The
+emulator turned off a display and carried on.
+
+So the observation is *frames continue while the display is off*, and the question was *what happens
+when the frame source stops*. Those are different questions, and this device cannot be made to ask
+the second one.
+
+### The two questions turn out to be one
+
+Worth stating because it changes what would settle them. Whether `frameTimeNanos` follows
+`CLOCK_MONOTONIC` or `CLOCK_BOOTTIME` only matters across a suspend — and a suspend is exactly the
+scenario `DefaultAnimationController.stop()` is worried about. **Question 1's unreachable half and
+Question 2 are the same experiment**, and both need hardware that actually sleeps.
+
+`lineage_beyond2lte` would answer both. Nothing available today will.
+
+### What this does to the sprint
+
+| | |
+|---|---|
+| **Question 0 — adapter?** | supported so far. A `FrameScheduler` needs one number, the thread already has a `Looper`, and `Choreographer` hands over `frameTimeNanos` on the clock the engine expects. Task 2 proceeds |
+| **Question 3** | closed. `AnimationHandle`'s threading note gets a name |
+| **Question 1** | closed for the awake case, which is the case that matters for a volume overlay |
+| **Question 2** | **stays open**, and `stop()`'s paragraph is not replaced by a decision. It is replaced by a sharper statement of what is unknown and what would settle it |
+
+That last row is the one worth not fudging. Task 3 was written expecting to close a gap that has
+waited since 06A; it will instead record why the gap survived a sprint that was named as its owner.
+A warning that has been made more precise is a better outcome than a decision made on a device that
+cannot produce the evidence for it.
+
+---
+
 ## What this sprint will not do
 
 - **Nothing is drawn.** A frame source makes frames arrive; it puts no pixel anywhere. Sprint 09 is
