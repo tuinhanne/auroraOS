@@ -137,6 +137,16 @@ replayed entrance, the indicator moving from where it is, no blink when a press 
 Those are motion requirements. Motion on a device needs `ChoreographerFrameScheduler`, which is
 Sprint 08 and does not exist.
 
+> **Resolved the same day.** Sprint 08 ran and closed: `ChoreographerFrameScheduler` exists in
+> `aurora.platform.android`, and a spring overshot its target inside `system_server` on a device.
+> The prerequisite this section named is met, so Task 3 is no longer blocked on it.
+>
+> Sprint 08 also left this sprint two things it did not ask for. **The frame source starves for
+> ~3.7 s during early boot and recovers to ~57 fps** — so nothing here may animate at `onStart`,
+> which the volume overlay does not, since a hardware key fires long after boot. And **the frame
+> source has not been wired permanently**, on purpose: where it lives follows Question 1's answer,
+> and wiring it before that would decide Question 1 by accident.
+
 **So the answer to Question 2 is yes**, and it is a consequence of Question 0's answer rather than a
 separate decision. A static first version is available and is not taken: it would ship the behaviour
 `volume-overlay.md` §4 exists to forbid, and shipping a known-wrong version to make a sprint fit is
@@ -149,11 +159,24 @@ the same failure as building a subject to make an assertion possible.
 Aurora currently lives in `system_server`. That is where it *starts*; it is not obviously where it
 should *draw*.
 
-| candidate | what it means | what would decide it |
-|---|---|---|
-| a window from `system_server` | Aurora adds a system window directly | is a system window from that process acceptable, and what does it cost when Aurora is wrong? |
-| inside `SystemUI` | where the system's own volume dialog lives | an Aurora component in SystemUI is an upstream patch, or a package the product adds — which is it? |
-| Launcher / QuickStep | what the README names for gesture work | almost certainly wrong for a system overlay, and worth refuting rather than ignoring |
+| candidate | what it means | what happens to AOSP's volume dialog | what would decide it |
+|---|---|---|---|
+| a window from `system_server` | Aurora adds a system window directly | it still runs. A key press would produce **two** overlays unless something suppresses it, and it belongs to SystemUI | is a system window from that process acceptable, and what does it cost when Aurora is wrong? |
+| inside `SystemUI` | where the system's own volume dialog lives | it can be replaced in place, with nothing to suppress | an Aurora component in SystemUI is an upstream patch, or a package the product adds — which is it? |
+| Launcher / QuickStep | what the README names for gesture work | untouched, and unrelated | almost certainly wrong for a system overlay, and worth refuting rather than ignoring |
+
+> **Every candidate also implies a different relationship with Android's existing volume UI.** Some
+> add a second overlay that must be reconciled; others replace the existing presentation. **This is
+> part of choosing where Aurora draws, not a later implementation detail.**
+
+The third column exists because without it the reasoning runs: *a surface is needed → a
+`system_server` window is easiest → the overlay appears → so does AOSP's → now work out how to
+suppress it.* By that point the product decision has been made by whichever surface was quickest to
+obtain.
+
+It does not favour any candidate. If the survey still chooses `system_server`, the decision reads
+*"we accept the cost of suppressing AOSP's dialog"* rather than *"we forgot it was there"* — which
+is the difference between a cost chosen and a cost discovered.
 
 **None has been examined.** The README says gesture work belongs in `aurora.platform` acting on
 SystemUI and Launcher3, which is a hint about a different subject and not an answer to this one.
@@ -223,7 +246,7 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
 - [ ] Question 0 answered against stated criteria, with a real alternative weighed
 - [ ] Question 1 answered by survey, with what was looked at recorded — including whatever turned
       out not to exist
-- [ ] Question 2 answered, and if the answer is *animated*, Sprint 08 is a named prerequisite rather
+- [x] Question 2 answered — **animated**, and Sprint 08 was named as the prerequisite rather
       than something discovered mid-task
 - [ ] Something is visible on a device, and a person has looked at it
 - [ ] Nothing was built whose only purpose was to make the looking possible
