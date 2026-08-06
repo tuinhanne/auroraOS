@@ -54,6 +54,24 @@ allow-import:   android.media.
 # android.util.Slog, which is @hide.
 allow-import:   android.util.
 
+# Added by Sprint 08 Task 2, and each entry is one line of ChoreographerFrameScheduler.
+#
+#   android.view.              Choreographer itself, and Display.DEFAULT_DISPLAY
+#   android.hardware.display.  DisplayManager, the only way to ask a refresh rate from a context
+#                              that is not display-associated - system_server's is not
+#   android.os.                Looper, for the thread guard. The scheduler binds to the thread it
+#                              is built on and refuses postFrame from any other, because
+#                              Choreographer.getInstance() would otherwise succeed on a second
+#                              thread and quietly start a second frame stream
+#
+# android.view. is the entry that will grow the most later, and is the one to watch: it is where a
+# window, a surface and a view hierarchy all live, and Sprint 09 will want at least one of them.
+# Admitting it for Choreographer does not admit those - the allowance is a prefix, and what uses it
+# is still reviewed.
+allow-import:   android.view.
+allow-import:   android.hardware.display.
+allow-import:   android.os.
+
 # org.lineageos. is forbidden rather than merely absent. Task 2 chose AOSP's
 # config_deviceSpecificSystemServices over LineageOS's config_externalLineageServices precisely so
 # that Aurora depends on Android and not on LineageOS, and a dependency floor that is only a habit
