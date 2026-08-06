@@ -138,6 +138,26 @@ Sprint 07.2   observe what production actually needed
                   no   →  the named gap stays open and correct
 ```
 
+### What actually happened, recorded 2026-08-06
+
+The first row was right about the need and wrong about the shape. It was not "Sprint 07.0"; it was
+**Sprint 03**, which the README had named in Sprint 02, and it did not need the frame source at all:
+
+```
+Sprint 03   Aurora runs inside system_server on the emulator.   Boot PASS.
+              · no upstream patch for the product - AOSP's config_deviceSpecificSystemServices
+              · a fourth Soong layer, device-only, installed to system_ext   (ADR-012)
+              · the first service implementation, answering from a real AudioManager
+```
+
+**The engine-restart gap did not close**, because no frame source was built — that is still
+Sprint 08, and the layer to put it in now exists. What closed instead was the question of whether
+Aurora can exist on a device at all.
+
+So the second row is where the project now stands, and it is the next thing to open. Its subject is
+**the first visible Aurora feature**, not the volume overlay: `docs/features/volume-overlay.md`
+specifies a candidate's behaviour and is not a decision that it is the one.
+
 **07.0 opens with an inventory, not a design.** One table — what exists, what is missing, what is
 merely assumed — answering *which artifacts are missing before the engine can run on a device*.
 Without it the sprint's scope is set by whoever writes the first file.
