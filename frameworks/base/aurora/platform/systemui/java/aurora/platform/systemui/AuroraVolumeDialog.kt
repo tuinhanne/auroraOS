@@ -117,8 +117,10 @@ class AuroraVolumeDialog : VolumeDialog {
     private var levelNow: Float = 0f
     private var alphaNow: Float = 0f
 
-    private var slimPx: Float = 0f
-    private var widePx: Float = 0f
+    private var slimWPx: Float = 0f
+    private var wideWPx: Float = 0f
+    private var slimHPx: Float = 0f
+    private var wideHPx: Float = 0f
 
     private val handler: Handler = Handler(Looper.getMainLooper())
 
@@ -376,10 +378,14 @@ class AuroraVolumeDialog : VolumeDialog {
         view?.let {
             it.level = levelNow
             it.alpha01 = alphaNow
-            it.trackWidthPx = slimPx + (widePx - slimPx) * widthNow
-            // The icon belongs to the wide form. It leaves faster than the width so it is gone
-            // before the pill is too narrow to hold it, rather than being clipped on the way out.
-            it.iconAlpha01 = (widthNow * ICON_FADE_GAIN).coerceIn(0f, 1f)
+            it.trackWidthPx = slimWPx + (wideWPx - slimWPx) * widthNow
+            it.trackHeightPx = slimHPx + (wideHPx - slimHPx) * widthNow
+            // The icon belongs to the wide form and must be fully gone by the time the pill is too
+            // narrow to hold it. A plain proportional fade left a faint mark at rest, because a
+            // spring settles near its target rather than exactly on it - so this reaches zero at
+            // ICON_GONE_BELOW and stays there.
+            it.iconAlpha01 =
+                ((widthNow - ICON_GONE_BELOW) / (1f - ICON_GONE_BELOW)).coerceIn(0f, 1f)
         }
 
         val running = (levelHandle?.isRunning == true) ||
@@ -401,14 +407,17 @@ class AuroraVolumeDialog : VolumeDialog {
         val wm = windowManager ?: return
         val v = view ?: return
         val density = v.resources.displayMetrics.density
-        slimPx = SLIM_DP * density
-        widePx = WIDE_DP * density
-        v.trackWidthPx = slimPx + (widePx - slimPx) * widthNow
+        slimWPx = SLIM_W_DP * density
+        wideWPx = WIDE_W_DP * density
+        slimHPx = SLIM_H_DP * density
+        wideHPx = WIDE_H_DP * density
+        v.trackWidthPx = slimWPx + (wideWPx - slimWPx) * widthNow
+        v.trackHeightPx = slimHPx + (wideHPx - slimHPx) * widthNow
         val lp = WindowManager.LayoutParams(
-            // The window is always the WIDE size. Narrowing happens inside it, so no layout pass
-            // and no surface resize lands on the animation's critical path.
-            (WIDE_DP * density).toInt(),
-            (HEIGHT_DP * density).toInt(),
+            // The window is always the WIDE size, in both directions. Shrinking happens inside it,
+            // so no layout pass and no surface resize lands on the animation's critical path.
+            (WIDE_W_DP * density).toInt(),
+            (WIDE_H_DP * density).toInt(),
             windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -452,13 +461,26 @@ class AuroraVolumeDialog : VolumeDialog {
     private companion object {
         const val TAG = "AuroraVolume"
 
-        /** A slim vertical bar. One shape, one number, per Sprint 09's third criterion. */
-        const val SLIM_DP = 10f
+        /**
+         * The resting shape: a slim vertical bar, the size the overlay had before the wide entrance
+         * existed. One shape, one number, per Sprint 09's third criterion.
+         */
+        const val SLIM_W_DP = 10f
+        const val SLIM_H_DP = 160f
 
-        /** Wide enough to hold a legible icon, which is the only reason the wide form exists. */
-        const val WIDE_DP = 34f
+        /**
+         * The entrance shape. Wider so an icon fits, and taller so the growth reads as one gesture
+         * rather than a bar that only got fatter.
+         */
+        const val WIDE_W_DP = 34f
+        const val WIDE_H_DP = 210f
 
-        const val HEIGHT_DP = 160f
+        /**
+         * Distance from the screen edge, and it belongs to the WINDOW rather than to either shape.
+         *
+         * The track is right-aligned inside the window, so this gap is the same wide or slim: the
+         * bar grows inward and never appears to slide.
+         */
         const val MARGIN_DP = 12f
 
         /**
@@ -475,7 +497,12 @@ class AuroraVolumeDialog : VolumeDialog {
         /** How long the wide form is held before narrowing. Long enough to read the icon. */
         const val NARROW_DELAY_MS = 550L
 
-        /** Makes the icon finish fading before the pill finishes narrowing. */
-        const val ICON_FADE_GAIN = 1.8f
+        /**
+         * Below this width fraction the icon is fully gone, not merely faint.
+         *
+         * A proportional fade leaves a residue at rest, because a spring settles *near* its target
+         * rather than exactly on it — and a barely-visible icon on a 10dp bar reads as dirt.
+         */
+        const val ICON_GONE_BELOW = 0.35f
     }
 }

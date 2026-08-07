@@ -74,6 +74,20 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             }
         }
 
+    /**
+     * Track height in pixels, animated with the width.
+     *
+     * The wide form is taller as well as fatter, so the entrance reads as one gesture rather than a
+     * bar that got fatter. The window is sized for the tall form and this shrinks inside it.
+     */
+    var trackHeightPx: Float = 0f
+        set(value) {
+            if (value != field) {
+                field = value
+                invalidate()
+            }
+        }
+
     /** Shown while the track is wide, gone once it narrows. Owned by the caller. */
     var icon: Drawable? = null
         set(value) {
@@ -104,32 +118,37 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
     private val rect = RectF()
 
     override fun onDraw(canvas: Canvas) {
-        val h = height.toFloat()
         val tw = trackWidthPx
-        if (tw <= 0f || h <= 0f) return
+        val th = trackHeightPx
+        if (tw <= 0f || th <= 0f) return
 
-        // Centred inside a window that stays at the wide size, so narrowing is a drawing change and
-        // not a window change.
-        val left = (width - tw) / 2f
-        val right = left + tw
+        // RIGHT-ALIGNED, not centred. The window sits a fixed margin from the screen edge and the
+        // track's right edge sits on the window's, so widening extends inward and the gap at the
+        // edge never changes. Centring inside the wide window made the bar appear to slide away
+        // from the edge as it grew, which reads as the whole thing moving rather than growing.
+        val right = width.toFloat()
+        val left = right - tw
+
+        // Vertically centred, so the taller wide form grows from the middle in both directions.
+        val top = (height - th) / 2f
+        val bottom = top + th
+
         val radius = tw / 2f
         val a = (alpha01 * 255f).toInt().coerceIn(0, 255)
 
-        // Track: the full height, dim.
         trackPaint.color = Color.argb((a * 0.35f).toInt().coerceIn(0, 255), 255, 255, 255)
-        rect.set(left, 0f, right, h)
+        rect.set(left, top, right, bottom)
         canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
         // Fill: grows upward from the bottom, because that is the direction a volume level means.
         // A zero-height fill still draws its rounded cap, so the indicator never looks broken at
         // silence - it looks empty, which is a different thing and the true one.
-        val filled = (h * level).coerceAtLeast(0f)
-        val fillTop = h - filled
+        val fillTop = bottom - (th * level).coerceAtLeast(0f)
         fillPaint.color = Color.argb(a, 255, 255, 255)
-        rect.set(left, fillTop, right, h)
+        rect.set(left, fillTop, right, bottom)
         canvas.drawRoundRect(rect, radius, radius, fillPaint)
 
-        drawIcon(canvas, left, tw, h, fillTop)
+        drawIcon(canvas, left, tw, bottom, fillTop)
     }
 
     /**
@@ -139,14 +158,14 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
      * the white fill. A single colour would vanish at one end of the range - which is the kind of
      * thing that only shows up when someone actually turns the volume down.
      */
-    private fun drawIcon(canvas: Canvas, left: Float, tw: Float, h: Float, fillTop: Float) {
+    private fun drawIcon(canvas: Canvas, left: Float, tw: Float, bottom: Float, fillTop: Float) {
         val d = icon ?: return
         val ia = (iconAlpha01 * alpha01 * 255f).toInt().coerceIn(0, 255)
         if (ia == 0) return
 
         val size = (tw * ICON_FRACTION)
         val cx = left + tw / 2f
-        val cy = h - tw / 2f - (tw - size) / 2f
+        val cy = bottom - tw / 2f - (tw - size) / 2f
         val half = size / 2f
 
         d.setBounds(
