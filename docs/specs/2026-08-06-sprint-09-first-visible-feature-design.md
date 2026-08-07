@@ -484,6 +484,29 @@ and would have reported *"layer not created yet"* about a contract with no layer
 line exists so that the red is legible as *the artifact does not yet satisfy a correct claim* rather
 than as an unfinished script. **What is not available is weakening the contract to make it green.**
 
+#### Run, not just written — and calibrated
+
+The status above was initially asserted from a *different* script's output, which would have made
+`expect-status` a claim about a gate nobody had executed. So the observer was run against the real
+build, and then pushed to each of its verdicts by editing a throwaway copy of the contract:
+
+| provocation | exit | verdict |
+|---|---|---|
+| as committed | 1 | `FAIL` — `aurora.platform.systemui` missing |
+| drop Aurora's `expect-entry` | 0 | `PASS` — the comparison can succeed |
+| `resource:` names a fake array | 2 | `UNREADABLE` |
+| `subject-glob:` matches nothing | 2 | `NO_ARTIFACT` |
+| no `expect-entry` at all | 2 | `EMPTY_CONTRACT` |
+
+The `PASS` row is the one that mattered: a gate that has only ever been red is indistinguishable
+from a gate that cannot be anything else. RULE-018's point, applied to a gate rather than a test.
+
+**And the exit codes turned out to carry the distinction by themselves** — `0` the contract holds,
+`1` the subject fails, `2` the instrument or the contract is broken. That was not designed; it fell
+out of `die()` using a third code. It means anything consuming this gate can separate *"Aurora is not
+in the allowlist"* from *"the measurement did not happen"* without parsing text — which is exactly
+the confusion that cost Task 3.0 three runs.
+
 ---
 
 ## 4. Question 2 — does the first pixel need animation at all?
@@ -606,6 +629,20 @@ Put more precisely, because it explains why every one of those first readings *f
 resource writer really does determine the value. Nothing was false. Each was an accurate answer to a
 question nobody had asked, standing in for one nobody had separated out — which is why none of them
 looked like an error until the next decision was built on it.
+
+A fourth instance turned up while building the gate, and it is the cleanest of the four because it
+is mechanical rather than conceptual: `arch-test.sh` would have reported *"layer not created yet"*
+about an artifact contract. True, and about nothing. That one produced the rule now recorded in
+`contracts/README.md` — **an observer may only speak about the subject its contract names** — and the
+ordering it implies: *where does my subject live?* is answered before an observer is written. Task
+3.0 did it backwards and read `SystemUI.apk`, which is not where the merged array lives.
+
+### Proposed for Sprint 10, not adopted here
+
+That ordering rule is worth applying to every contract Aurora adds, not just artifact ones. It is
+**not** given a `RULE-0xx` number yet: numbering it is a decision about the README's rule list, and
+one sprint's experience with two families is thin evidence for a standing rule. Recorded so Sprint 10
+can adopt or refuse it deliberately.
 
 ### The recurring shape: the result was right and the explanation was wrong
 

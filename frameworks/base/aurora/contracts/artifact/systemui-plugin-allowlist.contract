@@ -51,8 +51,25 @@ expect-entry:   aurora.platform.systemui
 subject-glob:   out/target/product/*/product/overlay/SystemUI__*_rro_product.apk
 also-check:     out/target/product/*/system_ext/priv-app/SystemUI/SystemUI.apk
 
-# Known red as of 2026-08-07. Aurora's entry is absent: Aurora's overlay directory is appended to
-# PRODUCT_PACKAGE_OVERLAYS after Lineage's and loses the merge. The repair is a mechanism decision
-# that waits on one unmeasured number - where system_ext ranks among overlay partitions. This
-# contract is correct and the artifact does not satisfy it, which is what a red gate is for.
+# Known red as of 2026-08-07, and red by execution rather than by assertion - the observer was run
+# against a real build before this line was written. Aurora's entry is absent: Aurora's overlay
+# directory is appended to PRODUCT_PACKAGE_OVERLAYS after Lineage's and loses the merge. The repair
+# is a mechanism decision that waits on one unmeasured number - where system_ext ranks among
+# overlay partitions. This contract is correct and the artifact does not satisfy it, which is what
+# a red gate is for.
 expect-status:  red-until-mechanism-decided
+
+# Calibrated 2026-08-07, RULE-018. A gate nobody has seen go the other way is a gate nobody has
+# tested, so each verdict was provoked against the real artifact by editing a throwaway copy of
+# this file - never this file - and the copy restored byte-identically afterwards:
+#
+#   as committed                     exit 1   FAIL            aurora.platform.systemui missing
+#   drop Aurora's expect-entry       exit 0   PASS            proves the comparison can succeed
+#   point resource: at a fake array  exit 2   UNREADABLE
+#   point subject-glob: at nothing   exit 2   NO_ARTIFACT
+#   remove every expect-entry        exit 2   EMPTY_CONTRACT
+#
+# The exit codes carry the distinction on their own: 0 the contract holds, 1 the subject fails,
+# 2 the instrument or the contract is broken. Anything reading this gate can tell "Aurora is not in
+# the allowlist" from "the measurement did not happen" without parsing a word of the output, which
+# is the failure Sprint 09 Task 3.0 hit three times before it produced any evidence at all.

@@ -22,6 +22,31 @@ The source family is flat and the artifact family is nested, which is asymmetric
 existing files into `source/` would touch `arch-test.sh` and every reference to it, for no gain in
 what either family checks; it is deferred rather than overlooked.
 
+## The rule the two families exist to enforce
+
+> **An observer may only speak about the subject its contract names.**
+
+Not a tooling convention. It is what keeps a check from being trusted outside the range where it can
+see anything, and Sprint 09 produced the failure it prevents four times in one sprint — each time as
+*a correct answer used to answer a different question*:
+
+| true | but it does not answer |
+|---|---|
+| `ExtensionController` is the plugin seam | where the APK lives — that is decided by **process** |
+| overlay ordering predicts which overlay wins | *why* it wins — the runtime derives priority from the partition |
+| the resource writer determines the value | who owns the contract the value expresses |
+| `arch-test.sh` reports a layer has no sources | nothing, if the contract has no layer |
+
+`arch-test.sh` is not wrong about merged resources; **it has no standing to speak about them**, the
+same way `aapt2` has no standing to speak about dependency layering. Each tool's reach is fixed by
+the subject of the contract it reads, and a tool pointed at a subject it cannot observe produces
+statements that are true and worthless — the hardest kind to notice, because nothing goes red.
+
+**Practical consequence, and the order matters:** a new contract answers *where does my subject
+live?* before anyone writes its observer. Sprint 09 arrived at that backwards — the first allowlist
+measurement read `SystemUI.apk`, which is not where the merged array lives, and reported `size=1` as
+if the subject had failed.
+
 ---
 
 ## Source contracts
