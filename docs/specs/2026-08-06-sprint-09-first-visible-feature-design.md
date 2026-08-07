@@ -476,6 +476,23 @@ itself product-configurable.
 Aurora already ships to has no measured position at all. That is the missing number, and only a build
 that puts an overlay there can supply it.
 
+> **Measured 2026-08-07 by Task 3.1 — `system_ext` is 39, above everything.**
+>
+> ```
+> vendor      0 – 4
+> product     5 – 38
+> system_ext  39        ← AuroraPartitionProbe, STATE_ENABLED, mIsMutable=false
+> ```
+>
+> Three independent signals agreed: `mPriority = 39`; both `cmd overlay lookup` calls returned the
+> probe's deliberately absurd values (`99.0dip`, `98.0dip`); and the status-bar clock is visibly
+> displaced in a screenshot.
+>
+> **The probe's manifest declared `android:priority="1"`** — the same value as the product RRO that
+> previously won, chosen precisely because it would *not* help. It won anyway, so the partition is the
+> cause by construction rather than by inference. That is the one thing this measurement had to get
+> right, since Task 3.0b had already been fooled once by treating the manifest number as the rank.
+
 **And which repair is right.** That is not what a measurement decides. The artifact now says who wins
 today; it does not say who *should own* `config_pluginAllowlist` — a resource whose value is a union
 of AOSP's, Lineage's and Aurora's entries, where whoever writes it takes responsibility for

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Two dimensions, chosen because each is already overridden by a different partition, so the
+     probe's rank can be read against both ends of the known range rather than one:
+
+       status_bar_clock_starting_padding   the VENDOR RRO defines it (12dp) - priority 4
+       global_actions_translate            the PRODUCT RRO defines it     - priority 32
+
+     The values are absurd on purpose. If either shows up as 99dp or 98dp at runtime, the probe
+     won that resource, and there is no plausible way to misread it as something else's value.
+
+     Nothing here is a resource Aurora wants. That is the point - see Android.bp.
+-->
+<resources>
+    <dimen name="status_bar_clock_starting_padding">99dp</dimen>
+    <dimen name="global_actions_translate">98dp</dimen>
+</resources>
