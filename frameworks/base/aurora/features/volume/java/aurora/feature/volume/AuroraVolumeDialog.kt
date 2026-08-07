@@ -22,6 +22,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import aurora.runtime.animation.DefaultAnimationController
@@ -122,6 +123,14 @@ class AuroraVolumeDialog : VolumeDialog {
     private var slimHPx: Float = 0f
     private var wideHPx: Float = 0f
 
+    /** True from ACTION_DOWN to ACTION_UP. While it is set, the finger owns the level, not a spring. */
+    private var dragging: Boolean = false
+
+    /** The stream being dragged, and the range to map a y coordinate into. From onStateChanged. */
+    private var activeStream: Int = -1
+    private var levelMin: Int = 0
+    private var levelMax: Int = 0
+
     private val handler: Handler = Handler(Looper.getMainLooper())
 
     // ---------------------------------------------------------------- Plugin
@@ -150,6 +159,10 @@ class AuroraVolumeDialog : VolumeDialog {
         view = VolumeIndicatorView(context).also {
             it.alpha01 = 0f
             it.level = 0f
+            // The touch listener lives here rather than in the view, so the view stays a surface that
+            // draws what it is told and holds no policy. It has no opinion about volume; giving it
+            // one would put the level in two places.
+            it.setOnTouchListener { _, event -> onTouch(event) }
         }
 
         // Built here, on the thread init() runs on, because Choreographer is per-Looper and this
@@ -214,9 +227,21 @@ class AuroraVolumeDialog : VolumeDialog {
             val stream = state.activeStream
             if (stream == VolumeDialogController.State.NO_ACTIVE_STREAM) return
             val s = state.states.get(stream) ?: return
+            activeStream = stream
+            levelMin = s.levelMin
+            levelMax = s.levelMax
+            view?.icon = iconFor(stream)
+
+            // While a finger is down it owns the level. Every setStreamVolume during a drag comes back
+            // here as a state change, and re-animating toward it would put a spring between the finger
+            // and the bar - which is exactly the lag a direct control must not have.
+            if (dragging) {
+                if (shown) scheduleDismiss()
+                return
+            }
+
             val span = (s.levelMax - s.levelMin).toFloat()
             val fraction = if (span > 0f) (s.level - s.levelMin) / span else 0f
-            view?.icon = iconFor(stream)
             // Width is not mentioned here on purpose. Whatever the entrance or the narrow started
             // keeps running; a state change has no opinion about how wide the bar is.
             animate(target = fraction.coerceIn(0f, 1f), fadeTo = if (shown) 1f else alphaNow)
@@ -251,6 +276,78 @@ class AuroraVolumeDialog : VolumeDialog {
         // onStateChanged already covers by the time the level has actually changed.
         override fun onShowCsdWarning(csdWarning: Int, durationMs: Int) = Unit
         override fun onVolumeChangedFromKey() = Unit
+    }
+
+    // ----------------------------------------------------------------- touch
+
+    /**
+     * The finger sets the level directly.
+     *
+     * `volume-overlay.md` §9 deferred touch as *"a second feature and a different set of questions"*.
+     * Four of those questions are answered here, and each answer is a decision rather than a default:
+     *
+     * - **The width goes wide, as on a first press.** Requested behaviour: a touch is the start of an
+     *   interaction, and the wide form is what says which stream it is about to change.
+     * - **No spring while dragging.** The level is assigned, not animated. A spring chasing a finger
+     *   is lag, and lag in a direct control reads as the phone being slow rather than as motion.
+     * - **The dismiss delay stops, rather than restarting.** A finger held still for three seconds is
+     *   still an interaction; a restarting timer would take the overlay away underneath it.
+     * - **Out of range clamps**, and the overlay stays up. §7's reason applies to a drag as much as to
+     *   a press: no feedback at all is indistinguishable from failure.
+     *
+     * Touches outside the window fall through to whatever is behind, which `FLAG_NOT_TOUCH_MODAL`
+     * already arranged - the overlay is a control now, but only where it is drawn.
+     */
+    private fun onTouch(event: MotionEvent): Boolean {
+        val v = view ?: return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                dragging = true
+                handler.removeCallbacks(dismissRunnable)
+                handler.removeCallbacks(narrowRunnable)
+                // The spring is dropped, not paused. Leaving the handle in place would let onFrame
+                // write its value over the finger's on the next tick.
+                levelHandle = null
+                volume?.userActivity()
+                animateWidth(1f)
+                applyDrag(v, event.y)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                volume?.userActivity()
+                applyDrag(v, event.y)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                dragging = false
+                scheduleNarrow()
+                scheduleDismiss()
+            }
+            else -> return false
+        }
+        return true
+    }
+
+    /** Maps a y coordinate inside the view onto the track, then onto the stream's own range. */
+    private fun applyDrag(v: VolumeIndicatorView, y: Float) {
+        val trackH = v.trackHeightPx
+        if (trackH <= 0f) return
+        val top = (v.height - trackH) / 2f
+        val bottom = top + trackH
+
+        // Bottom is loud-down, top is loud-up, matching the direction the fill grows.
+        val fraction = ((bottom - y) / trackH).coerceIn(0f, 1f)
+
+        levelNow = fraction
+        alphaNow = 1f
+        v.level = fraction
+        v.alpha01 = 1f
+
+        val span = levelMax - levelMin
+        if (activeStream >= 0 && span > 0) {
+            val userLevel = levelMin + Math.round(fraction * span)
+            // sync=false: let the audio system settle asynchronously. The bar is already where the
+            // finger is, so waiting for confirmation would only add latency to a value we set.
+            volume?.setStreamVolume(activeStream, userLevel, false)
+        }
     }
 
     // ------------------------------------------------------------- animation
@@ -371,8 +468,12 @@ class AuroraVolumeDialog : VolumeDialog {
         lastFrameNanos = nanos
         controller.tick(FrameTime(nanos, delta, frameIndex++))
 
-        levelHandle?.let { levelNow = it.value }
-        fadeHandle?.let { alphaNow = it.value }
+        // levelHandle is null while dragging, but the guard is explicit as well: a state change that
+        // arrives between ACTION_DOWN and the next frame could have started one.
+        if (!dragging) {
+            levelHandle?.let { levelNow = it.value }
+            fadeHandle?.let { alphaNow = it.value }
+        }
         widthHandle?.let { widthNow = it.value }
 
         view?.let {
@@ -393,6 +494,9 @@ class AuroraVolumeDialog : VolumeDialog {
             (widthHandle?.isRunning == true)
         if (running) {
             requestFrame()
+        } else if (dragging) {
+            // Nothing is animating, but a finger is down and the window must not be taken away.
+            // No frame is requested either: the drag draws on touch events, not on a clock.
         } else if (alphaNow <= 0.01f) {
             // Faded out and nothing left to move: the window goes away rather than sitting there
             // invisible and holding a surface.
@@ -442,6 +546,9 @@ class AuroraVolumeDialog : VolumeDialog {
     private fun hideWindow() {
         handler.removeCallbacks(dismissRunnable)
         handler.removeCallbacks(narrowRunnable)
+        // A window removed mid-drag takes the finger's owner with it. Without this, dragging would
+        // stay true and the next appearance would refuse to animate its level.
+        dragging = false
         // Reset to the wide form so the next appearance is an entrance again rather than resuming
         // wherever the last one stopped. The handle goes with it: a finished 1â†’0 animation left in
         // place would write 0 back over this on the very next frame, and the reset would look like
