@@ -58,7 +58,7 @@ option 3 in its most likely form: a **prebuilt** APK from another repository wou
 signed it there, and would be refused on any build signed with different keys. Option 3 survives only
 as *source in another repo, built here*, which is where its real cost lives.
 
-### Why option 1 is refuted by Soong, and then by something better
+### Why option 1 fails, and why Soong is the weaker half of the reason
 
 Strictly, it is impossible: a Soong module is `java_library` **xor** `android_app`.
 `aurora-platform-android` is the former, an APK must be the latter, so "inside
@@ -69,10 +69,17 @@ and still wrong, and the reason is the thing this ADR is really for:
 
 > **`aurora-platform-android` runs in `system_server`. The plugin runs in SystemUI's process.**
 
-They are not two halves of one layer. They can never share an object, only IPC. ADR-012 created the
-fourth layer because of the Android dependency; the plugin has the same dependency and a *different
-process*, and process is the stronger boundary — a violation of it fails at runtime with
-`ClassNotFoundException` or worse, while a violation of the Android boundary fails at compile time.
+They are not two halves of one layer. They can never share an object; **every interaction across the
+boundary is IPC by construction.** The boundary exists before any implementation and independently of
+what checks it, so crossing it is not a layering mistake — it is a violation of Android's process
+model, and there is no version of the code in which it works.
+
+ADR-012 created the fourth layer because of the Android dependency, which is a fact about the build:
+`sdk_version` and `platform_apis` are module-global, so the boundary had to become a module boundary
+to be expressible at all. **This one is not a fact about the build.** Soong happens to reflect it —
+`java_library` xor `android_app` — but Soong is reflecting a separation that Android already imposes,
+and if Soong changed tomorrow the separation would be exactly where it is. That is the more durable
+reason, and it is the reason this ADR rests on.
 
 And a second source root under one contract is exactly the mistake `platform-android.contract:18`
 already records: `arch-test.sh` reads **one** `source-root` per contract, so the new directory would
@@ -132,9 +139,13 @@ the repository splits the gate, and it would do so at the worst possible place.
   species as the `userdebug` gate Task 2 found, and invisible in the same way.
 
   The measurement that settles it: build, then read the merged array out of the produced SystemUI
-  resources rather than reasoning about overlay precedence. **Task 3 does this before writing plugin
-  code**, because the alternative — discovering it when a `user` build ships without an overlay — is
-  the outcome this whole line of work exists to avoid.
+  resources rather than reasoning about overlay precedence.
+
+  **This is not advice to Task 3; it is Task 3's opening gate.** Writing plugin code before the merged
+  array is known would not risk a silent failure — it would *build a second one*, on top of the
+  `userdebug` gate Task 2 just found, and the two would be indistinguishable from the outside: in both
+  cases the plugin does not load, AOSP's dialog keeps working, and nothing is logged. Sprint 09's spec
+  carries it as an exit criterion for that reason.
 
 - Aurora gains a fifth Soong module and a sixth contract. `verify-motion-tests.sh`'s 356 host tests
   are untouched: the plugin is device-only, like `aurora-platform-android`, and for the same reason.

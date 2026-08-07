@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The AuroraOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+
+<!--
+     Aurora's SystemUI resource overlay. The second directory under this root, and the first that
+     touches a package rather than the framework.
+
+     ADR-014 put Aurora's first APK in SystemUI's process, as a plugin behind the extension point
+     VolumeDialogComponent already exposes. This file is the other half of that: without it the
+     plugin is refused on any build that is not debuggable.
+-->
+<resources>
+
+    <!--
+         SystemUI plugins loadable on user builds.
+
+         PluginActionManager.kt:222 and PluginInstance.kt:301:
+
+             if (!buildInfo.isDebuggable && !config.isPrivileged(component)) { ... }
+
+         The list behind isPrivileged comes from exactly one place - PluginsModule.java:99 reads
+         this array - and "privileged" here has nothing to do with priv-app or
+         PRIVATE_FLAG_PRIVILEGED. It is only membership in this string-array.
+
+         Sprint 09 Task 2 found this by reading the gate rather than running anything, and that is
+         the only way it could have been found: every product this checkout can boot is userdebug,
+         so isDebuggable is true and the check never fires. A plugin that passed on the emulator
+         would be silently absent on a user build - not crashed, not logged, just absent, with
+         AOSP's own dialog continuing to work.
+
+         AOSP ships one entry here and Lineage's own overlay adds two more, including
+         org.lineageos.settings.device. Adding a vendor plugin to this array is a move the tree
+         already makes.
+
+         WARNING, and it is the reason Task 3 opens with a measurement: vendor/lineage's overlay
+         defines this same array, and Aurora's overlay root is appended to PRODUCT_PACKAGE_OVERLAYS
+         after Lineage's. Which one survives into the built SystemUI has not been measured. If
+         Lineage's wins, this file does nothing and says nothing about it.
+
+         The first three entries are not decoration. An overlay REPLACES a resource; it does not
+         merge into it. A file here listing only Aurora would win the race and take the wallet
+         plugin and org.lineageos.settings.device down with it - which is the failure mode of
+         winning, and it is quieter than the failure mode of losing. Both directions of this
+         measurement have to be read.
+    -->
+    <string-array name="config_pluginAllowlist" translatable="false">
+        <!-- AOSP's entry. -->
+        <item>com.android.systemui</item>
+        <!-- Lineage's two, carried because an overlay replaces rather than merges. -->
+        <item>com.android.systemui.plugin.globalactions.wallet</item>
+        <item>org.lineageos.settings.device</item>
+        <!-- Aurora's, and the only line this file exists to add. ADR-014. -->
+        <item>aurora.platform.systemui</item>
+    </string-array>
+
+</resources>

@@ -371,9 +371,18 @@ together* is the shape this project has spent several sprints learning to avoid.
 2. **Task 2 — the surface.** Answer Question 1 by survey, the way Sprint 03 Task 2 answered where
    the runtime belongs: look for what already exists before proposing anything.
 3. **Task 3 — the first pixel.** Whatever Question 2 decided, static or animated. Opens on ADR-014's
-   module, and its **first step is a measurement, not code**: build and read `config_pluginAllowlist`
-   out of the produced SystemUI resources, because two overlay roots define it and which one wins has
-   not been measured.
+   module, and **it is gated, not merely advised**:
+
+   > **Task 3.0 — the allowlist measurement.** Add Aurora's entry to
+   > `frameworks/base/aurora/overlay/frameworks/base/packages/SystemUI/res/values/config.xml`, build
+   > SystemUI, and read the merged `config_pluginAllowlist` out of the produced artifact. **No plugin
+   > code is written until that array is known to contain Aurora's package.**
+   >
+   > Not caution. Two overlay roots define the array and Aurora's is appended second; if Lineage's
+   > wins, the entry vanishes with no error. Writing the plugin first would stack a second silent
+   > failure on the `userdebug` gate Task 2 found, and **the two are indistinguishable from outside** —
+   > in both, the plugin does not load, AOSP's dialog keeps working, and nothing is logged. Debugging
+   > them together costs more than measuring one of them now.
 4. **Task 4 — look at it.** The only sprint so far whose exit criterion is a person watching a
    screen. Boot PASS was checkable from a log; this is not.
 
@@ -390,8 +399,12 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
       out not to exist. **Inside SystemUI, as a plugin**; the two misses are recorded above
 - [x] Question 2 answered — **animated**, and Sprint 08 was named as the prerequisite rather
       than something discovered mid-task
+- [ ] **The merged `config_pluginAllowlist` in the built SystemUI artifact is known to contain
+      Aurora's package** — read out of the build, not inferred from overlay ordering. Added after
+      ADR-014; it gates Task 3 rather than reporting on it
 - [ ] Something is visible on a device, and a person has looked at it
 - [ ] Nothing was built whose only purpose was to make the looking possible
 
-The fourth is the sprint's real test and the first in this project that no gate can check. The fifth
-is what keeps the fourth honest.
+The fifth is the sprint's real test and the first in this project that no gate can check. The sixth
+is what keeps the fifth honest. The fourth was inserted between them and the others deliberately: it
+is the only one that must go green *before* work starts rather than as a result of it.
