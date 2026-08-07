@@ -109,6 +109,44 @@ violation — it is a bug in what Sprint 09 chose.
 
 ---
 
+## Task 2's decision, recorded before it was coded — **mute holds the bar wide**
+
+`volume-overlay.md`'s standing note requires the UX reason before the behaviour. The reason turned out
+to be a constraint this sprint had created itself.
+
+**The icon only exists in the wide form.** Sprint 11 fades it to zero below 35% width, and the bar
+spends most of its life narrow. So an icon swap cannot carry mute: the indicator would vanish 550 ms
+after it appeared, while the state it indicates persists.
+
+And a second constraint from measurement: **Android mutes a stream when its level reaches 0**, so
+`muted@0` and `unmuted@0` occur with identical levels. Anything expressed through the fill's height
+fails there.
+
+> **A persistent state needs a persistent indicator, and the wide form is where indicators live.**
+> So a muted bar does not narrow.
+
+Three consequences, all reusing mechanisms that already existed:
+
+| | |
+|---|---|
+| the bar stays wide while muted | the icon survives, and `muted@0` differs from `unmuted@0` by one narrowing and not by a level |
+| the stream icon is struck through | keeps *which stream* (§5) and adds *silent* (§1) in one slot, with no new drawable per stream. A muted-speaker glyph would answer the second question by discarding the first |
+| the fill becomes an outline | the preserved level stays visible as §6 requires, without reading as *sounding at this loudness*. Legible only because a muted bar never narrows — a 2 dp stroke inside a 10 dp bar would be mush |
+
+Only the **width** is held. The overlay still dismisses on its timer: mute is a property of the stream,
+not a reason to keep a transient surface on screen.
+
+### Verified
+
+Wide frame held (`[960,861][1049,1412]`), icon struck through, and the preserved level visible as an
+outlined region at roughly the right height for 8/15.
+
+**`dumpsys audio` reported `streamVolume:0` for that same stream**, because that is the *effective*
+volume; `VolumeDialogController.StreamState.level` carries the preserved one. Trusting the shell would
+have produced the conclusion that §6's second requirement was broken.
+
+---
+
 ## 3. Task order
 
 1. **Task 1 — measure §7** before changing anything. One press at maximum, and read whether the

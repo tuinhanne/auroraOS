@@ -131,6 +131,9 @@ class AuroraVolumeDialog : VolumeDialog {
     private var levelMin: Int = 0
     private var levelMax: Int = 0
 
+    /** Mirrors the active stream's mute state, so a change in it can be told from a repeat of it. */
+    private var mutedNow: Boolean = false
+
     private val handler: Handler = Handler(Looper.getMainLooper())
 
     // ---------------------------------------------------------------- Plugin
@@ -231,6 +234,22 @@ class AuroraVolumeDialog : VolumeDialog {
             levelMin = s.levelMin
             levelMax = s.levelMax
             view?.icon = iconFor(stream)
+
+            // Mute is a state, so the indicator for it has to be one that persists. The bar's wide
+            // form is where indicators live, so a muted bar stays wide instead of narrowing away from
+            // the only thing saying it is silent. §6, and the reason it is not simply an icon swap:
+            // the icon fades out below 35% width, which is where the bar spends most of its life.
+            val wasMuted = mutedNow
+            mutedNow = s.muted
+            view?.muted = mutedNow
+            if (mutedNow != wasMuted) {
+                if (mutedNow) {
+                    handler.removeCallbacks(narrowRunnable)
+                    animateWidth(1f)
+                } else if (shown) {
+                    scheduleNarrow()
+                }
+            }
 
             // While a finger is down it owns the level. Every setStreamVolume during a drag comes back
             // here as a state change, and re-animating toward it would put a spring between the finger
@@ -375,23 +394,34 @@ class AuroraVolumeDialog : VolumeDialog {
      */
     private fun animate(target: Float, fadeTo: Float) {
         val seq = ++animationSeq
-        levelHandle = controller.animator.play(
-            Animation(
-                name = "aurora.volume.level.$seq",
-                spec = SpringSpec(),
-                from = levelNow,
-                to = target,
-            )
-        )
-        fadeHandle = controller.animator.play(
-            Animation(
-                name = "aurora.volume.fade.$seq",
-                spec = SpringSpec(),
-                from = alphaNow,
-                to = fadeTo,
-            )
-        )
+        // Same rule as animateWidth, and the dismiss path is where it bit. beginDismiss() asks for
+        // `target = levelNow` - the level is not meant to move while the overlay fades - which is a
+        // zero-displacement spring, which never reports itself finished. `running` in onFrame stayed
+        // true forever, so the branch that removes the window once the fade completes never ran.
+        // Assigned directly ONLY when there is no animation. Assigning first and animating too would
+        // jump to the target on the frame before the spring's first sample, which is exactly the
+        // discontinuity §4 forbids.
+        val lh = springOrNull("aurora.volume.level.$seq", levelNow, target)
+        if (lh == null) levelNow = target
+        levelHandle = lh
+
+        val fh = springOrNull("aurora.volume.fade.$seq", alphaNow, fadeTo)
+        if (fh == null) alphaNow = fadeTo
+        fadeHandle = fh
+
+        view?.let {
+            it.level = levelNow
+            it.alpha01 = alphaNow
+        }
         requestFrame()
+    }
+
+    /** A spring, or `null` when there is nothing to travel. See [AT_REST]. */
+    private fun springOrNull(name: String, from: Float, to: Float): AnimationHandle? {
+        if (kotlin.math.abs(to - from) < AT_REST) return null
+        return controller.animator.play(
+            Animation(name = name, spec = SpringSpec(), from = from, to = to)
+        )
     }
 
     /**
@@ -407,6 +437,22 @@ class AuroraVolumeDialog : VolumeDialog {
      * of them survives a value that has not been sampled yet.
      */
     private fun animateWidth(to: Float) {
+        // A spring with no displacement is at rest, not running - so do not start one.
+        //
+        // This mattered more than it looks. ACTION_DOWN calls animateWidth(1f) unconditionally, and
+        // on an already-wide bar that is a 1 -> 1 animation. Measured behaviour of such a handle:
+        // isRunning stays true indefinitely. So `running` in onFrame never went false, the loop never
+        // reached the branch that removes the window after a fade, and a bar dismissed while still
+        // wide vanished by some other path instead of fading out.
+        //
+        // Reported from a device as "it just hides instead of animating away", and the evidence for
+        // the cause was already sitting in a log from three hours earlier: handle=1.0/true, on every
+        // frame.
+        if (kotlin.math.abs(to - widthNow) < AT_REST) {
+            widthNow = to
+            widthHandle = null
+            return
+        }
         widthHandle = controller.animator.play(
             Animation(
                 name = "aurora.volume.width.${++animationSeq}",
@@ -451,10 +497,12 @@ class AuroraVolumeDialog : VolumeDialog {
      */
     private fun scheduleNarrow() {
         handler.removeCallbacks(narrowRunnable)
+        // A muted bar has nowhere to narrow to: the mute indicator only exists in the wide form.
+        if (mutedNow) return
         handler.postDelayed(narrowRunnable, NARROW_DELAY_MS)
     }
 
-    private val narrowRunnable = Runnable { animateWidth(0f) }
+    private val narrowRunnable = Runnable { if (!mutedNow) animateWidth(0f) }
 
     /** Which stream is being changed, as a picture. Falls back to media rather than to nothing. */
     private fun iconFor(stream: Int): android.graphics.drawable.Drawable? {
@@ -510,7 +558,7 @@ class AuroraVolumeDialog : VolumeDialog {
         } else if (dragging) {
             // Nothing is animating, but a finger is down and the window must not be taken away.
             // No frame is requested either: the drag draws on touch events, not on a clock.
-        } else if (alphaNow <= 0.01f) {
+        } else if (alphaNow <= FADED_OUT) {
             // Faded out and nothing left to move: the window goes away rather than sitting there
             // invisible and holding a surface.
             hideWindow()
@@ -616,6 +664,23 @@ class AuroraVolumeDialog : VolumeDialog {
 
         /** How long the wide form is held before narrowing. Long enough to read the icon. */
         const val NARROW_DELAY_MS = 550L
+
+        /**
+         * Below this displacement an animation would have nothing to do.
+         *
+         * Not a tolerance for sloppiness: a spring asked to travel zero distance from zero velocity
+         * reports itself as running forever, and anything waiting for it to finish waits forever.
+         */
+        const val AT_REST = 0.001f
+
+        /**
+         * Alpha at which the window is worth removing.
+         *
+         * Deliberately looser than [AT_REST]: a spring settles *near* its target, so waiting for a
+         * true zero would leave an invisible window holding a surface indefinitely. One part in a
+         * hundred of opacity is not visible on any display this will run on.
+         */
+        const val FADED_OUT = 0.01f
 
         /**
          * Below this width fraction the icon is fully gone, not merely faint.

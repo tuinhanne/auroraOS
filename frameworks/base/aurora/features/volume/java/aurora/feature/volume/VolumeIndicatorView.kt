@@ -108,12 +108,36 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             }
         }
 
+    /**
+     * Whether the stream is muted, which is a **state** and not a level of zero.
+     *
+     * `volume-overlay.md` §6: *the overlay must distinguish silent because it is at the bottom from
+     * silent because it is muted, because the recovery is different: one is a press away, the other
+     * is not.* Two things change when this is set — the fill becomes an outline, and the icon is
+     * struck through — and neither of them is the level, because §6 also requires that muting
+     * **preserves** the level and that the preserved level stays visible.
+     */
+    var muted: Boolean = false
+        set(value) {
+            if (value != field) {
+                field = value
+                invalidate()
+            }
+        }
+
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+    }
+
+    /** The muted fill's outline, and the slash across the icon. Width set once from density. */
+    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f * context.resources.displayMetrics.density
+        strokeCap = Paint.Cap.ROUND
     }
 
     private val rect = RectF()
@@ -160,9 +184,25 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         canvas.clipPath(clip)
 
         val fillTop = bottom - (th * level).coerceAtLeast(0f)
-        fillPaint.color = Color.argb(a, 255, 255, 255)
         rect.set(left, fillTop, right, bottom)
-        canvas.drawRect(rect, fillPaint)
+
+        if (muted) {
+            // Outlined rather than solid. A solid column at the preserved level would read as
+            // "sounding at this loudness", which is the one thing it is not. The outline says the
+            // level is still there and nothing is coming out of it.
+            //
+            // Legible because a muted bar never narrows - AuroraVolumeDialog holds it wide for
+            // exactly this reason. A 2dp stroke inside a 10dp bar would be mush.
+            val inset = strokePaint.strokeWidth / 2f
+            fillPaint.color = Color.argb((a * 0.18f).toInt().coerceIn(0, 255), 255, 255, 255)
+            canvas.drawRect(rect, fillPaint)
+            rect.inset(inset, inset)
+            strokePaint.color = Color.argb(a, 255, 255, 255)
+            canvas.drawRect(rect, strokePaint)
+        } else {
+            fillPaint.color = Color.argb(a, 255, 255, 255)
+            canvas.drawRect(rect, fillPaint)
+        }
 
         canvas.restore()
 
@@ -186,15 +226,31 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         val cy = bottom - tw / 2f - (tw - size) / 2f
         val half = size / 2f
 
+        // A muted fill is an outline, so the icon sits over the track's dimness rather than over
+        // white - reading the contrast off the fill boundary would pick the wrong colour.
+        val tint = if (!muted && cy > fillTop) ON_FILL else ON_TRACK
+
         d.setBounds(
             (cx - half).toInt(),
             (cy - half).toInt(),
             (cx + half).toInt(),
             (cy + half).toInt(),
         )
-        d.setTint(if (cy > fillTop) ON_FILL else ON_TRACK)
+        d.setTint(tint)
         d.alpha = ia
         d.draw(canvas)
+
+        if (!muted) return
+
+        // Struck through, rather than replaced by a generic "volume off" glyph.
+        //
+        // §1 wants two facts from this one slot - WHICH stream, and whether it is muted - and a
+        // muted-speaker icon answers the second by discarding the first. A slash keeps the stream's
+        // own glyph, needs no new drawable per stream, and is the one "off" mark nobody has to learn.
+        strokePaint.color = tint
+        strokePaint.alpha = ia
+        val r = half * 0.95f
+        canvas.drawLine(cx - r, cy + r, cx + r, cy - r, strokePaint)
     }
 
     private companion object {
