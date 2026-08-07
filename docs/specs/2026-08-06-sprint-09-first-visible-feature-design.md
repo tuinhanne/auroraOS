@@ -1,6 +1,7 @@
 # Sprint 09 — The first visible Aurora feature
 
-**Status:** design in review · 2026-08-06 · the first sprint whose result a person can see
+**Status:** **closed 2026-08-08**, 6/6 · opened 2026-08-06 · the first sprint whose result a person can
+see, and the first whose result a person changed
 
 Numbered 09 because 08 is the Android platform bridge and this may or may not need it — Question 2
 decides. The number records order, not dependency.
@@ -547,6 +548,64 @@ the confusion that cost Task 3.0 three runs.
 
 ---
 
+## Task 3 and 4's result, recorded 2026-08-08 — **Aurora draws, and a person changed it four times**
+
+`AuroraSystemUIPlugin` replaces AOSP's volume dialog through `ExtensionController`, on a build where
+`ro.debuggable=0` and the allowlist is what permits it to load. A slim white bar on the right edge,
+arriving wide with a stream icon, narrowing, tracking the level, dismissing itself.
+
+### Three bugs the build could not have found
+
+Each passed `arch-test.sh`, the allowlist gate, and the compiler. Each was found by pressing a key.
+
+| bug | why every gate was silent |
+|---|---|
+| `exported="false"` on the plugin service | `queryIntentServices(intent, 0)` never returns it, and SystemUI logs *Found 0 plugins* rather than an error. Copied from `ExamplePlugin`, which is from 2015; the 2025 `clocks/sample` plugin — one that actually ships — uses `exported="true"` |
+| no `getState()` call | the track drew and the fill never did. `VolumeDialogController` pushes *changes*; a plugin that only registers a callback has nothing to draw until something moves, and on the first press that arrives after the window is up |
+| no dismissal | `onDismissRequested` arrives for *reasons*, not on a timer — `VolumeDialogImpl` runs its own `Handler` for the idle case. **Owning the surface means owning its lifetime**, which Task 2's survey missed because it read the seam and not the lifecycle around it |
+
+### And one the sprint's own habits caused
+
+`animate(widthTo = widthNow)` — *"leave the width where it is"* — silently cancelled the wide
+entrance. Five key presses arrive within milliseconds, **before any frame has ticked**, so `widthNow`
+was still its initial value and the entrance's `0→1` was replaced four times by `0→0`.
+
+> ***Leave it alone*** and ***re-target it to its current value*** read identically and behave
+> identically for every value that has been sampled. They differ exactly once: for a value the
+> animation loop has not written yet.
+
+The comment on the line that broke it said it was preserving the width.
+
+### The measurement that was wrong, and the eyes that were not
+
+After the fix, screenshots at +150 ms still showed the slim bar, twice, and the code was re-read
+twice without finding a cause. **The user reported seeing the wide form.** Instrumented, the answer
+was immediate:
+
+```
+onShowRequested wasHidden=true widthNow=1.0
+frame=1 widthNow=1.0 trackW=89.25 slimW=26.25 wideW=89.25
+```
+
+`89.25px` is 34dp. The wide form was always there. **`adb shell input` plus `screencap` carry several
+hundred milliseconds of uncontrolled latency, and the wide phase lasts 550 ms** — the captures landed
+after it. A person watching was the more accurate instrument, and the automated one produced a
+confident, repeatable, wrong answer.
+
+That is the sharpest argument this sprint produced for its own fifth exit criterion. It was written to
+catch what gates cannot see; it also caught what a gate *could* have seen but measured badly.
+
+### Four design changes, all from looking
+
+1.5 s instead of 2.5 s. A wide entrance carrying a stream icon. The track right-aligned so widening
+extends inward and the gap at the screen edge never moves. The wide form taller as well as wider.
+
+The third of these was two reported symptoms — *"it drifts from the edge"* and *"the resting bar looks
+thicker"* — with one cause: the track was centred inside a wide window, so it sat 12 dp of window plus
+12 dp of centring from the edge.
+
+---
+
 ## 4. Question 2 — does the first pixel need animation at all?
 
 The most useful decomposition available, and it is easy to miss because Aurora's animation runtime
@@ -630,12 +689,34 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
       criterion from *contains Aurora* to *exact set*; ADR-016 widened it again to *upstream ∪
       Aurora's own*, because Aurora now owns the winning artifact and can no longer use it as
       evidence about itself
-- [ ] Something is visible on a device, and a person has looked at it
-- [ ] Nothing was built whose only purpose was to make the looking possible
+- [x] **Something is visible on a device, and a person has looked at it.** Aurora's volume overlay
+      replaces AOSP's, and a person did more than look — four rounds of design changes came back, and
+      one of their observations corrected a measurement that had been repeated and believed
+- [x] **Nothing was built whose only purpose was to make the looking possible** — argued below rather
+      than asserted, because this sprint did build something purely to be measured
 
 The fifth is the sprint's real test and the first in this project that no gate can check. The sixth
 is what keeps the fifth honest. The fourth was inserted between them and the others deliberately: it
 is the only one that must go green *before* work starts rather than as a result of it.
+
+### The sixth, argued
+
+**Sprint 09 did build something whose only purpose was measurement: `AuroraPartitionProbe`.** An RRO
+containing two absurd dimensions, installed to `/system_ext/overlay` so the runtime could be asked
+where that partition ranks. It is worth stating plainly rather than filing under "instruments are
+fine".
+
+It does not violate 06C.0's rule, and the reason is what the rule actually says: *no **production**
+code whose only purpose is to create a **subject for an assertion***. The probe created no subject —
+it asked a question of Android and carried no Aurora behaviour. It was marked `TEMPORARY` in the
+patch alongside its module path so the two would be deleted together, it deliberately did **not**
+touch `config_pluginAllowlist` so its result could not arrive pre-committed to an answer, and it was
+deleted — source and built artifact both — the same day, with its removal verified on a boot
+(`status_bar_clock_starting_padding` back to the vendor's `12.0dip`).
+
+The distinction worth keeping: **an instrument answers a question; a subject makes an assertion
+possible.** A probe that had carried Aurora's allowlist entry would have been the candidate mechanism
+wearing an instrument's name, and would have failed this criterion.
 
 ---
 
@@ -725,6 +806,24 @@ the next instance will be a different convention in a different script, and the 
 generalises is *read a script that already works before writing a new one*, which is a habit and not
 a check. Recorded because it is the same shape as the subject the sprint was measuring — two overlay
 files each holding a fact, neither aware of the other.
+
+### The automated instrument was confidently, repeatably wrong
+
+Three times this sprint an automated measurement produced a wrong answer that looked exactly like a
+right one — and the third is the one worth keeping, because a person caught it:
+
+| the instrument | its wrong answer | what it actually measured |
+|---|---|---|
+| `pgrep`-based waiters | *the build finished* | that an ssh connection had died |
+| an unconditional `echo` in a survey script | *"VolumeDialogController is NOT in the plugin API"* | nothing. The grep above it had found matches |
+| `adb screencap` at +150 ms | *the wide entrance never happens* | that `input keyevent` + `screencap` cost more than the 550 ms being observed |
+
+The third survived two code re-reads. It was corrected by the user saying *"I saw it"* — and the
+instrumentation then agreed with them in one run.
+
+**Automation is not more trustworthy than a person; it is more repeatable.** A wrong measurement that
+repeats is more convincing than a right one that does not, which is exactly backwards, and is why
+this sprint's fifth exit criterion had to be a person rather than a script.
 
 ### A verification cost was removed by evidence, not by assumption
 
