@@ -19,6 +19,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.view.View
@@ -117,6 +118,9 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
 
     private val rect = RectF()
 
+    /** The track's outline, reused every frame so onDraw allocates nothing. */
+    private val clip = Path()
+
     override fun onDraw(canvas: Canvas) {
         val tw = trackWidthPx
         val th = trackHeightPx
@@ -136,17 +140,31 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         val radius = tw / 2f
         val a = (alpha01 * 255f).toInt().coerceIn(0, 255)
 
-        trackPaint.color = Color.argb((a * 0.35f).toInt().coerceIn(0, 255), 255, 255, 255)
         rect.set(left, top, right, bottom)
+        trackPaint.color = Color.argb((a * 0.35f).toInt().coerceIn(0, 255), 255, 255, 255)
         canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
         // Fill: grows upward from the bottom, because that is the direction a volume level means.
-        // A zero-height fill still draws its rounded cap, so the indicator never looks broken at
-        // silence - it looks empty, which is a different thing and the true one.
+        //
+        // CLIPPED to the track's shape rather than rounded on its own. Drawing it as its own rounded
+        // rect looked identical at most levels and was wrong at low ones: Canvas clamps a corner
+        // radius to half the rect's height, so a short fill got LESS rounded corners than the track
+        // and its squarer bottom poked out past the track's curve. Reported from a device as the fill
+        // spilling outside the bar.
+        //
+        // Clipping states the actual rule - the fill is the track, filled in - so it cannot disagree
+        // with the track's outline at any height, including heights nobody tested.
+        clip.rewind()
+        clip.addRoundRect(rect, radius, radius, Path.Direction.CW)
+        canvas.save()
+        canvas.clipPath(clip)
+
         val fillTop = bottom - (th * level).coerceAtLeast(0f)
         fillPaint.color = Color.argb(a, 255, 255, 255)
         rect.set(left, fillTop, right, bottom)
-        canvas.drawRoundRect(rect, radius, radius, fillPaint)
+        canvas.drawRect(rect, fillPaint)
+
+        canvas.restore()
 
         drawIcon(canvas, left, tw, bottom, fillTop)
     }

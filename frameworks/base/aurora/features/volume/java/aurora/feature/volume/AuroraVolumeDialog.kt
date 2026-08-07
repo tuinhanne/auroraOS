@@ -326,9 +326,22 @@ class AuroraVolumeDialog : VolumeDialog {
         return true
     }
 
-    /** Maps a y coordinate inside the view onto the track, then onto the stream's own range. */
+    /**
+     * Maps a y coordinate inside the view onto the track, then onto the stream's own range.
+     *
+     * **Against the WIDE geometry, not the current one, and that is a fix rather than a shortcut.**
+     * The first version read `v.trackHeightPx`, which is animating: `ACTION_DOWN` calls
+     * `animateWidth(1f)` and then this, before any frame has run, so the first sample used the slim
+     * height and every later sample used a taller one. The same finger position meant a different
+     * level at different moments of one gesture — measured as a one-step discrepancy against a
+     * computed target.
+     *
+     * A drag always forces the wide form, so the wide form is the honest coordinate space for it.
+     * Mapping against a value that is mid-animation is the same mistake as reading `widthNow` before
+     * a frame had written it, which cost Sprint 09 three build cycles.
+     */
     private fun applyDrag(v: VolumeIndicatorView, y: Float) {
-        val trackH = v.trackHeightPx
+        val trackH = if (wideHPx > 0f) wideHPx else v.trackHeightPx
         if (trackH <= 0f) return
         val top = (v.height - trackH) / 2f
         val bottom = top + trackH
