@@ -42,13 +42,25 @@
              loads the named class through the plugin's own ClassLoader and casts it to the plugin
              interface. ExamplePlugin does the same with a class implementing OverlayPlugin.
 
-             exported="false" follows ExamplePlugin. The query happens inside the platform, not from
-             another app.
+             exported="true" is REQUIRED and was measured, not chosen. PluginActionManager.kt:192 is
+             `packageManager.queryIntentServices(intent, 0)` - flags 0, so a non-exported service in
+             another package is never returned. The first build shipped exported="false", copied from
+             ExamplePlugin, and SystemUI logged:
+
+                 PluginActionManager[com.android.systemui.action.PLUGIN_VOLUME]: Found 0 plugins
+
+             ExamplePlugin is from 2015 and nothing loads it. SystemUI's clocks/sample plugin, added
+             in 2025 and actually shipped, uses exported="true" and directBootAware="true". Looking
+             at the thing that works beat looking at the thing named "Example".
+
+             directBootAware because volume keys work before the first unlock, so SystemUI queries
+             for this plugin while the user is still locked out.
         -->
         <service
-            android:name=".AuroraVolumeDialog"
+            android:name="aurora.platform.systemui.AuroraVolumeDialog"
             android:label="Aurora volume"
-            android:exported="false">
+            android:directBootAware="true"
+            android:exported="true">
             <intent-filter>
                 <!-- VolumeDialog.ACTION. Not spelled out anywhere but here and the interface. -->
                 <action android:name="com.android.systemui.action.PLUGIN_VOLUME" />

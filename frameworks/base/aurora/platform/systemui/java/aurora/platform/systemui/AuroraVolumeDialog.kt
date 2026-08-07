@@ -80,6 +80,16 @@ class AuroraVolumeDialog : VolumeDialog {
     private val controller: DefaultAnimationController = DefaultAnimationController()
     private var scheduler: PluginFrameScheduler? = null
 
+    /**
+     * SystemUI's volume controller, held rather than re-fetched.
+     *
+     * Needed for three calls the first build omitted, each of which cost a visible bug:
+     * [VolumeDialogController.getState] to be told the level at all, `notifyVisible` so the
+     * controller knows something is on screen, and `userActivity` so it does not consider the user
+     * idle while they are still pressing.
+     */
+    private var volume: VolumeDialogController? = null
+
     private var levelHandle: AnimationHandle? = null
     private var fadeHandle: AnimationHandle? = null
 
@@ -124,10 +134,17 @@ class AuroraVolumeDialog : VolumeDialog {
         scheduler = PluginFrameScheduler()
         controller.start()
 
-        PluginDependency.get(this, VolumeDialogController::class.java)
-            .addCallback(callbacks, handler)
+        val c = PluginDependency.get(this, VolumeDialogController::class.java)
+        volume = c
+        c.addCallback(callbacks, handler)
 
-        Log.i(TAG, "init: windowType=$windowType, waiting for a show request")
+        // Ask. The first build only registered the callback and waited, which produced a track with
+        // no fill: VolumeDialogController pushes onStateChanged for changes, and a plugin that never
+        // asks for the current state has nothing to draw until something moves - and on the very
+        // first press, "something moved" arrives after the window is already up.
+        c.getState()
+
+        Log.i(TAG, "init: windowType=$windowType, state requested")
     }
 
     override fun destroy() {
@@ -136,12 +153,9 @@ class AuroraVolumeDialog : VolumeDialog {
     }
 
     private fun teardown() {
-        sysuiContext?.let {
-            runCatching {
-                PluginDependency.get(this, VolumeDialogController::class.java)
-                    .removeCallback(callbacks)
-            }
-        }
+        handler.removeCallbacks(dismissRunnable)
+        runCatching { volume?.removeCallback(callbacks) }
+        volume = null
         hideWindow()
         controller.stop()
         scheduler = null
@@ -155,11 +169,14 @@ class AuroraVolumeDialog : VolumeDialog {
 
         override fun onShowRequested(reason: Int, keyguardLocked: Boolean, lockTaskModeState: Int) {
             showWindow()
+            volume?.notifyVisible(true)
+            volume?.getState()
             animate(target = levelNow, fadeTo = 1f)
+            scheduleDismiss()
         }
 
         override fun onDismissRequested(reason: Int) {
-            animate(target = levelNow, fadeTo = 0f)
+            beginDismiss()
         }
 
         override fun onStateChanged(state: VolumeDialogController.State) {
@@ -169,6 +186,9 @@ class AuroraVolumeDialog : VolumeDialog {
             val span = (s.levelMax - s.levelMin).toFloat()
             val fraction = if (span > 0f) (s.level - s.levelMin) / span else 0f
             animate(target = fraction.coerceIn(0f, 1f), fadeTo = if (shown) 1f else alphaNow)
+            // Each change is the user still acting, so the clock restarts rather than running out
+            // mid-gesture.
+            if (shown) scheduleDismiss()
         }
 
         override fun onLayoutDirectionChanged(layoutDirection: Int) = Unit
@@ -228,6 +248,30 @@ class AuroraVolumeDialog : VolumeDialog {
             )
         )
         requestFrame()
+    }
+
+    /**
+     * The overlay dismisses itself, because nothing else will.
+     *
+     * The first build assumed [VolumeDialogController.onDismissRequested] would arrive on a timer and
+     * the overlay simply never went away. It does not: the controller sends that for *reasons* —
+     * screen off, a touch outside, an explicit dismissal — and `VolumeDialogImpl` runs its own
+     * `Handler` for the idle case. **Owning the surface means owning its lifetime**, which is a
+     * consequence of replacing the dialog that Task 2's survey did not surface.
+     */
+    private fun scheduleDismiss() {
+        handler.removeCallbacks(dismissRunnable)
+        handler.postDelayed(dismissRunnable, DISMISS_DELAY_MS)
+    }
+
+    private val dismissRunnable = Runnable { beginDismiss() }
+
+    private fun beginDismiss() {
+        handler.removeCallbacks(dismissRunnable)
+        volume?.notifyVisible(false)
+        // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
+        // to full opacity first - volume-overlay.md §4's "no blink when a press interrupts a fade".
+        animate(target = levelNow, fadeTo = 0f)
     }
 
     private fun requestFrame() {
@@ -293,6 +337,7 @@ class AuroraVolumeDialog : VolumeDialog {
     }
 
     private fun hideWindow() {
+        handler.removeCallbacks(dismissRunnable)
         if (!shown) return
         val wm = windowManager ?: return
         val v = view ?: return
@@ -300,6 +345,7 @@ class AuroraVolumeDialog : VolumeDialog {
             .onFailure { Log.e(TAG, "removeView failed", it) }
         shown = false
         lastFrameNanos = 0
+        volume?.notifyVisible(false)
     }
 
     private companion object {
@@ -309,5 +355,14 @@ class AuroraVolumeDialog : VolumeDialog {
         const val WIDTH_DP = 10f
         const val HEIGHT_DP = 160f
         const val MARGIN_DP = 16f
+
+        /**
+         * How long the overlay stays after the last change.
+         *
+         * Aurora's number, not AOSP's, and deliberately not read from
+         * `config_volumeDialogTimeout`: that resource governs a dialog Aurora replaced, and
+         * inheriting it would make this look like a value someone chose for this surface.
+         */
+        const val DISMISS_DELAY_MS = 2_500L
     }
 }
