@@ -399,11 +399,66 @@ committed repository. `device/samsung/beyond2lte/overlay/` holds five files, non
 `lineage_beyond2lte` carrying Aurora through a device tree Aurora owns."* Nothing carries it. See
 the correction appended to ADR-013; the removability **test** survives, its **demonstration** does not.
 
+### Task 3.0b — asking the runtime, because everything above was still a model
+
+The findings above came from build files and manifests. **That the product RRO therefore wins at
+runtime was an inference**, and this sprint's own rule forbids acting on one. So the emulator was
+booted and asked directly.
+
+```
+$ cmd overlay lookup --verbose com.android.systemui \
+      com.android.systemui:array/config_pluginAllowlist
+
+  Found initial: /product/overlay/SystemUI__…_rro_product.apk #14
+  Overlaid:      /product/overlay/SystemUI__…_rro_product.apk #14
+  Best matching is from default configuration of com.android.systemui.auto_generated_rro_product__
+
+  com.android.systemui
+  com.android.systemui.plugin.globalactions.wallet
+  org.lineageos.settings.device
+```
+
+**Build merge and runtime resolution agree.** Three entries in the artifact, the same three at
+runtime, from the named APK. There is no third layer between them, which is the thing worth knowing:
+`aapt2 dump` on the RRO is a sound proxy for what SystemUI will read, and a future gate can use it.
+
+Both auto-generated RROs are `STATE_ENABLED` with `mIsMutable=false` — always on, not enableable.
+
+### And the runtime falsified part of the model
+
+```
+product RRO   manifest android:priority="1"   →   runtime mPriority = 32
+vendor  RRO   manifest android:priority="0"   →   runtime mPriority = 4
+```
+
+**The manifest number is not the priority.** `mPriority` is a global index over every immutable
+overlay, and it is blocked by partition:
+
+| partition | count | priority range |
+|---|---|---|
+| `vendor` | 5 | 0 – 4 |
+| `product` | 83 | 5 – 38 |
+| mutable (emulation skins, `data/*.frro` themes) | — | `2147483647` |
+
+So the ordering conclusion (product beats vendor) holds, but **the mechanism named for it was wrong**,
+and with it the plan built on it: *"an Aurora RRO declaring `android:priority="2"` outranks Lineage"*
+is refuted. Two is not a rank; it is an input the runtime discards.
+
+**What decides is which partition the overlay is installed to** — and that has a consequence nobody
+had looked for: `/product/overlay/partition_order.xml` exists as a documented override
+(`OverlayConfig.java:76`), absent on this build, so the default order applies. Partition precedence is
+itself product-configurable.
+
 ### What Task 3.0 did not establish
 
-Which repair is right. Four candidates exist, one is already refuted by finding C, and choosing
-between the rest is a decision about **who owns a resource shared with the vendor** — not something a
-measurement settles. Task 3 stays closed until that is decided.
+**Where `system_ext` ranks.** `/system_ext/overlay` is empty on this image, so the one partition
+Aurora already ships to has no measured position at all. That is the missing number, and only a build
+that puts an overlay there can supply it.
+
+**And which repair is right.** That is not what a measurement decides. The artifact now says who wins
+today; it does not say who *should own* `config_pluginAllowlist` — a resource whose value is a union
+of AOSP's, Lineage's and Aurora's entries, where whoever writes it takes responsibility for
+preserving the parts they do not own. Task 3 stays closed until an ADR settles that.
 
 ---
 
