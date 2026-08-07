@@ -324,6 +324,89 @@ that was never written.
 
 ---
 
+## Task 3.0's result, recorded 2026-08-07 — **FAIL, and the artifact was not the one being measured**
+
+### Three runs before any evidence about the subject
+
+Recorded because the distinction is the point of the verdict set:
+
+| run | outcome | what it was evidence about |
+|---|---|---|
+| 1 | `LUNCH FAILED` | the target `bp2a` was wrong. **The instrument** |
+| 2 | `LUNCH FAILED` | `bp4a` was right; `set -u` breaks `envsetup.sh`, and `lunch`'s output was redirected to `/dev/null`, so the cause was hidden by the measurement itself. **The instrument** |
+| 3 | `UNREADABLE` | build and dump succeeded; the parser expected `(string8) "…"` and `aapt2` prints `["…"]`. **The instrument** |
+
+None of the three said anything about `config_pluginAllowlist`. Had `LUNCH_FAILED` been folded into
+`FAIL`, run 1 would have reported *the subject does not satisfy the contract* on the strength of a
+typo — so the five-way verdict set earned itself on its first use.
+
+Run 2's cause was written down on the VM before the run: `07-discover.sh` opens with
+`# ... KHONG dung set -e/-u`. **A note existed and did not propagate to a new measurement** — which is
+the same shape as the subject under test, where two overlay files each record a fact and neither
+knows the other exists.
+
+### The verdict, once the instrument worked
+
+```
+-- expected --                                       -- actual (RRO) --
+   aurora.platform.systemui                             com.android.systemui
+   com.android.systemui                                 com.android.systemui.plugin.globalactions.wallet
+   com.android.systemui.plugin.globalactions.wallet      org.lineageos.settings.device
+   org.lineageos.settings.device
+-- missing --  aurora.platform.systemui
+VERDICT=FAIL
+```
+
+**Lineage wins and Aurora's entry is dropped in silence** — the direction §3's warning named. `aapt2`
+did compile Aurora's directory (`m SystemUI` step 47/54 names it), so this is not a wiring mistake;
+the merge resolved against Aurora.
+
+### Four things the measurement found that no source reading had suggested
+
+**A. `PRODUCT_PACKAGE_OVERLAYS` is not baked into `SystemUI.apk` on this product.**
+`build/make/target/product/generic_system.mk:125` sets `PRODUCT_ENFORCE_RRO_TARGETS := *`, so every
+static overlay becomes a **runtime** resource overlay in its own APK.
+`SystemUI.apk`'s own `config_pluginAllowlist` is `size=1` — AOSP's untouched entry. **The first pass
+measured the wrong artifact**, and read `size=1` as a subject failure for a few minutes.
+
+**B. The two overlay variables produce two different APKs.** `package_internal.mk:150-152`:
+
+```make
+runtime_resource_overlays_product := $(filter-out $(static),$(product_package_overlays))
+runtime_resource_overlays_vendor  := $(filter-out $(static),$(device_package_overlays))
+```
+
+`PRODUCT_PACKAGE_OVERLAYS` → `product/overlay/SystemUI__…_rro_product.apk`.
+`DEVICE_PACKAGE_OVERLAYS` → `vendor/overlay/SystemUI__…_rro_vendor.apk`.
+
+**C. And they have different priorities, which closes the escape route.** Both are
+`isStatic="true"`, `targetPackage="com.android.systemui"`, so both always apply — but
+`priority=1` for the product RRO and `priority=0` for the vendor one. **Lineage's overlay reaches the
+higher-priority APK.** So routing Aurora through `DEVICE_PACKAGE_OVERLAYS` — the variable Aurora's
+device tree already uses — would lose at runtime instead of at build time. It is not a fix.
+
+**D. Earlier in the list wins.** Aurora's directory is appended last and lost; Lineage's set survived
+intact. Measured in one direction only — enough to refuse *append*, not enough to state a general
+rule about the build system.
+
+### And one finding that corrects an accepted ADR
+
+`device/` contains **no reference to Aurora at all** — verified on the VM tree and again on the
+committed repository. `device/samsung/beyond2lte/overlay/` holds five files, none of which names
+`AuroraSystemService`, and neither `beyond2lte` nor `exynos9820-common` mentions Aurora anywhere.
+
+**ADR-013's demonstration is therefore wrong** where it says deleting the emulator patch *"leaves
+`lineage_beyond2lte` carrying Aurora through a device tree Aurora owns."* Nothing carries it. See
+the correction appended to ADR-013; the removability **test** survives, its **demonstration** does not.
+
+### What Task 3.0 did not establish
+
+Which repair is right. Four candidates exist, one is already refuted by finding C, and choosing
+between the rest is a decision about **who owns a resource shared with the vendor** — not something a
+measurement settles. Task 3 stays closed until that is decided.
+
+---
+
 ## 4. Question 2 — does the first pixel need animation at all?
 
 The most useful decomposition available, and it is easy to miss because Aurora's animation runtime

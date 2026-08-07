@@ -83,3 +83,45 @@ no Aurora-owned seam into it — not because patching was quicker than looking.
   what it will not prove is anything specific to a Galaxy S10 5G.
 - The patch is expected to be deletable for as long as it exists. If it ever is not, that is a
   finding and not a maintenance task.
+
+## Correction, 2026-08-07 — the test stands, the demonstration does not
+
+Sprint 09 Task 3.0 measured `device/` while looking for something else and found **no reference to
+Aurora anywhere in it.** `device/samsung/beyond2lte/overlay/` holds five files —
+`core/res/.../config.xml`, `power_profile.xml`, a `SettingsProvider` default, a SystemUI `dimens.xml`
+and a lineage-sdk config — and none of them names `AuroraSystemService`. Neither `beyond2lte` nor
+`exynos9820-common` mentions Aurora in any makefile. Verified on the build tree and again on the
+committed repository.
+
+So this sentence in the Decision above is false:
+
+> `lineage_beyond2lte` still carries them by way of a device tree Aurora owns.
+
+**Nothing carries them.** Delete the emulator patch today and Aurora is on no product at all.
+
+### What survives and what does not
+
+**The removability test survives**, and so does this patch's classification under it: deleting the
+patch still leaves every Aurora artifact unchanged, which is what the test actually asks. Aurora's
+source does not depend on the patch.
+
+**The claim about `lineage_beyond2lte` does not**, and it was doing real work in the argument — it was
+the evidence that the patch was *only* an observer rather than the sole thing making Aurora exist
+anywhere. Without it the classification rests on the narrower reading alone, and the narrower reading
+is the one the test was written with. The conclusion is unchanged; its support is thinner than it
+looked.
+
+### Why this was not caught in Sprint 03
+
+Because it was checked in the wrong direction. Task 4.4's survey established that
+`device/samsung/beyond2lte/overlay` **exists and is Aurora's to write in** — which is true — and then
+the ADR wrote as though something had been written in it. **Owning a directory is not the same as
+having put anything there**, and that is the same confusion Sprint 06C.0 named one level down:
+*presence is not responsibility.*
+
+The obligation this creates is concrete rather than editorial: **a `config_deviceSpecificSystemServices`
+entry naming `AuroraSystemService` belongs in `device/samsung/beyond2lte/overlay/frameworks/base/core/res/res/values/config.xml`**,
+and until it is written the sentence above stays crossed out rather than repaired. Writing it is not
+this ADR's job, and it must not be done as a tidy-up — Sprint 09 Task 3.0 also found that the two
+overlay variables land in **different RRO APKs with different priorities**, so what that entry would
+actually do on a real device is itself unmeasured.
