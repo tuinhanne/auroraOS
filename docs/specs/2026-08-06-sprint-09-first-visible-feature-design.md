@@ -556,6 +556,24 @@ is the only one that must go green *before* work starts rather than as a result 
 Written as they happen rather than reconstructed at the end, because the useful detail is the part
 that stops being surprising once you know the answer.
 
+### The sprint's one sentence
+
+> **Sprint 09 repeatedly found that implementation ownership is a poor proxy for semantic ownership.**
+
+Three findings, three subjects, one shape — and the third only looked like a new discovery because
+the first two had been filed under different headings:
+
+| task | what was conflated | what separated them |
+|---|---|---|
+| **Task 2** | *the plugin seam* with *where the APK lives* | the seam is `ExtensionController`, which AOSP owns and which imposes nothing about placement. Placement turned out to be decided by **process**, a fact from a different layer entirely |
+| **Task 3.0** | *which overlay wins* with *why it wins* | the outcome was predicted correctly from `PRODUCT_PACKAGE_OVERLAYS` ordering and from `android:priority`. Both readings were wrong about the mechanism; the runtime derives priority from the partition |
+| **ADR-015** | *who writes the resource* with *who owns the contract* | the array's value is a union of three parties. Writing it is an implementation act; preserving the union is a semantic responsibility, and the mechanism cannot express the difference |
+
+Each time, the implementation-level fact was available, correct, and load-bearing in the wrong
+argument. **Being able to point at the file that produces something is not the same as knowing who is
+answerable for what it means** — and the failure mode is identical in all three: a decision gets made
+at the level where the evidence was easiest to find.
+
 ### The recurring shape: the result was right and the explanation was wrong
 
 Twice, and the second time is what makes it worth naming:

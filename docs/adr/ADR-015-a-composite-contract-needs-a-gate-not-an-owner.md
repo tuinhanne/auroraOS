@@ -107,10 +107,40 @@ It is refused for two reasons, in this order:
 - **`verify-plugin-allowlist.sh` moves from "consider later" to required.** It is no longer an
   optional hardening; this ADR's acceptance of ownership is conditional on it. Task 3.0's measurement
   script is its prototype and already does build → dump → set-compare.
-- **The expected set becomes a declared artifact**, not a constant buried in a script — it is the
-  contract this ADR names, and it changes only by decision.
+- **The expected set becomes a declared artifact**, not a constant buried in a script. See below —
+  where it lives is not decoration, it is what keeps this ADR from contradicting itself.
 - **Aurora now tracks two upstreams for one resource.** That is a new kind of dependency for this
   project: not a build dependency, not an API dependency, but an obligation to notice someone else's
   edit. It is the first, and the gate is the only reason it is acceptable.
 - The mechanism decision is deferred, and the sprint stops rather than guessing — the same way
   Sprint 03 stopped for ADR-012.
+
+## Where the declared set lives, and why the question is not cosmetic
+
+**The gate does not own the truth. It reads a declaration and compares it to an artifact.**
+
+If the expected four entries are a heredoc inside `verify-plugin-allowlist.sh`, then the contract
+*is* the script, and this ADR has argued its way back to the thing it rejected: an invariant held in
+an implementation detail, changed by whoever is editing the tooling, reviewed as tooling. The
+composite contract would have a single owner again, and that owner would be a shell script.
+
+So the declaration has to satisfy three properties, and they are the decision here rather than any
+particular filename:
+
+1. **Version-controlled and reviewed like a contract**, because a change to it is a decision about
+   what Aurora is responsible for preserving — not a fix.
+2. **Readable by the gate and by a person**, so that "what is Aurora claiming?" is answerable without
+   running anything.
+3. **Separate from the tool that enforces it**, so the tool can be rewritten without the claim
+   moving.
+
+`frameworks/base/aurora/contracts/` already has exactly those properties for every other machine-readable
+expectation in this project, and its `key: value` / repeated-key format is what `values_of` in
+`arch-test.sh` already parses. That is where this belongs, and naming it costs nothing to reverse.
+
+**One difference has to stay visible, though.** Every existing contract is checkable without building
+anything — `arch-test.sh` reads source and `Android.bp` files and finishes in seconds. This one
+cannot be: its subject is a merged resource that only a build produces. So it sits beside the others
+and is **enforced by a different tool**, and that split is a property of the claim rather than an
+inconsistency. A contract about Aurora's own source can be checked from the source; a contract about
+what survives someone else's overlay cannot.
