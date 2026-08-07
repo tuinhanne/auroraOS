@@ -293,6 +293,27 @@ Task 1 caught the same shape once already. **It was caught here by reading the g
 anything** — no available machine can ask this question, and that is exactly why the allowlist entry
 has to be written now rather than when a `user` build first fails.
 
+> **Corrected 2026-08-07 — the paragraph above is wrong, and it is the sprint's motif again.**
+>
+> Measured on the booted emulator: `getprop ro.debuggable` returns **`0`**. And
+> `Build.java:1851` is `IS_DEBUGGABLE = SystemProperties.getInt("ro.debuggable", 0) == 1`, which
+> `BuildInfo.kt` passes straight to the plugin gate. So **`isDebuggable` is `false` here and the gate
+> does fire on this emulator.**
+>
+> Not an accident of the image. `vendor/lineage/config/common.mk:42` — *"Set ro.debuggable=0 for
+> userdebug"* — Lineage hardens its userdebug builds deliberately, using the AOSP knob documented at
+> `build/make/core/product.mk:487`.
+>
+> **The conclusion survives and strengthens; the reasoning behind it does not.** The allowlist entry
+> is still required — it is required *here*, not only on some future `user` build. What is wrong is
+> the claim that the emulator is blind to this gate and that "no available machine can ask this
+> question." The available machine can ask it, and now will.
+>
+> *"`userdebug` therefore `IS_DEBUGGABLE`"* is a correct statement about AOSP and a false one about
+> this tree. **Correct answer, wrong question — the fifth instance, and the purest**, because the
+> reasoning never touched an artifact at all: it went from a build-variant name straight to a runtime
+> boolean.
+
 ### What this costs Aurora, stated before Task 3 spends it
 
 - **A new build module.** The plugin is an `android_app`, not a jar — the first APK Aurora has. Where
@@ -636,6 +657,18 @@ about an artifact contract. True, and about nothing. That one produced the rule 
 `contracts/README.md` — **an observer may only speak about the subject its contract names** — and the
 ordering it implies: *where does my subject live?* is answered before an observer is written. Task
 3.0 did it backwards and read `SystemUI.apk`, which is not where the merged array lives.
+
+A fifth turned up last and is the purest of all, because no artifact was consulted at any point:
+**`userdebug` therefore `IS_DEBUGGABLE`.** True of AOSP, false of this tree — Lineage sets
+`ro.debuggable=0` on userdebug on purpose, `getprop` says `0`, and `Build.java:1851` reads that
+property and nothing else. The whole chain ran from a build-variant *name* to a runtime boolean
+without touching the device that was sitting there answering `adb` commands the entire time.
+
+**Its cost was not the error. It was the conclusion drawn from the error:** *"no available machine
+can ask this question."* That sentence closed off a measurement for a day. The wrong mechanism did
+not produce a wrong decision here — the allowlist entry was needed either way — it produced a
+**wrongly narrowed set of things worth measuring**, which is the more expensive failure and the
+harder one to notice, because nothing contradicts a measurement you decided not to make.
 
 ### Proposed for Sprint 10, not adopted here
 

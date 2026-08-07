@@ -36,11 +36,18 @@
          this array - and "privileged" here has nothing to do with priv-app or
          PRIVATE_FLAG_PRIVILEGED. It is only membership in this string-array.
 
-         Sprint 09 Task 2 found this by reading the gate rather than running anything, and that is
-         the only way it could have been found: every product this checkout can boot is userdebug,
-         so isDebuggable is true and the check never fires. A plugin that passed on the emulator
-         would be silently absent on a user build - not crashed, not logged, just absent, with
-         AOSP's own dialog continuing to work.
+         Sprint 09 Task 2 found this by reading the gate rather than running anything, and assumed
+         no available machine could exercise it - every bootable product here is userdebug, so
+         isDebuggable would be true and the check would never fire.
+
+         That assumption was measured on 2026-08-07 and is FALSE. getprop ro.debuggable returns 0 on
+         the emulator, Build.java:1851 derives IS_DEBUGGABLE from exactly that property, and
+         vendor/lineage/config/common.mk:42 sets it deliberately: "Set ro.debuggable=0 for
+         userdebug". Lineage hardens userdebug, so this gate fires HERE, not only on some future
+         user build. The entry below is required by the machine on the desk.
+
+         A plugin refused by this gate is not crashed and not logged - just absent, with AOSP's own
+         dialog continuing to work, which is why it has to be checked rather than noticed.
 
          AOSP ships one entry here and Lineage's own overlay adds two more, including
          org.lineageos.settings.device. Adding a vendor plugin to this array is a move the tree
