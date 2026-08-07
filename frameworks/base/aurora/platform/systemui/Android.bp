@@ -1,0 +1,38 @@
+// aurora.platform.systemui - the fifth layer, and Aurora's first APK that draws. ADR-014.
+//
+// Separate from aurora-platform-android not because of Android but because of PROCESS: this runs
+// inside SystemUI, that one runs inside system_server, and the two can never share an object. The
+// contract enforces it by omitting aurora.platform.android. from allow-aurora-import.
+
+android_app {
+    name: "AuroraSystemUIPlugin",
+
+    manifest: "AndroidManifest.xml",
+    srcs: ["java/**/*.kt"],
+
+    // Statically linked, because a plugin APK gets its own ClassLoader and nothing on SystemUI's
+    // classpath provides these. The SDK and runtime are sdk_version: core_current and contain no
+    // Android reference at all, which is why they can be pulled into an APK unchanged.
+    static_libs: [
+        "aurora-sdk",
+        "aurora-runtime",
+    ],
+
+    // Provided, not linked: SystemUI already has it, and two copies of VolumeDialog would be two
+    // different types to the ClassLoader that matters.
+    libs: ["SystemUIPluginLib"],
+
+    // SystemUI declares com.android.systemui.permission.PLUGIN as protectionLevel="signature", so
+    // this is not a preference. Task 2 measured it.
+    certificate: "platform",
+
+    platform_apis: true,
+
+    // Same partition as every other Aurora artifact, and the same reason as ADR-013's build
+    // failure: system/ is inside generic_system.mk's artifact path requirement.
+    system_ext_specific: true,
+
+    optimize: {
+        enabled: false,
+    },
+}
