@@ -1,6 +1,37 @@
 # Sprint 10 — The unit that has a contract
 
-**Status:** design in review · 2026-08-08 · opens only after Sprint 09 closes
+**Status:** **withdrawn 2026-08-08, the day it was written** · kept because the decision inside it
+survives, and because withdrawing it is the more useful record
+
+## Why this was withdrawn
+
+§9 says *"Not design for Island, Gesture or Control Panel. They do not exist."* The sprint is that
+design. Aurora has **one** feature, and every benefit claimed here begins at the second.
+
+The argument that settles it: **extracting Volume into a library costs the same whether it is done
+today or the day the second feature starts.** Doing it now buys nothing except moving the risk
+earlier — and the risk is real, because Question 1 is unanswered and the work touches the one thing
+that was verified by eye hours ago.
+
+Sprint 04.1's rule, applied to a sprint instead of a class: *no abstraction whose only purpose is to
+make something possible that nothing has asked for.*
+
+## What replaces it
+
+Not a sprint. A **trigger**:
+
+> **The second SystemUI feature does not begin until Volume has been extracted into its own
+> `android_library` with its own contract, and Question 1 below has been answered by running
+> `arch-test.sh` against it.**
+
+That inverts the cost correctly. The split stops being speculative work and becomes the first task of
+whichever sprint actually needs it — driven by a demand that exists, priced against a benefit that has
+arrived.
+
+Everything below stands as written and is the plan for that day. Question 1 in particular is still
+unanswered and still a hypothesis.
+
+---
 
 Not a sprint about directory layout. Sprint 09 produced Aurora's first feature and, in doing so,
 produced the first evidence that the current arrangement stops describing anything once there are
