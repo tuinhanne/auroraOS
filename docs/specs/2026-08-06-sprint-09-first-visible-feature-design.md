@@ -537,12 +537,60 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
       out not to exist. **Inside SystemUI, as a plugin**; the two misses are recorded above
 - [x] Question 2 answered — **animated**, and Sprint 08 was named as the prerequisite rather
       than something discovered mid-task
-- [ ] **The merged `config_pluginAllowlist` in the built SystemUI artifact is known to contain
-      Aurora's package** — read out of the build, not inferred from overlay ordering. Added after
-      ADR-014; it gates Task 3 rather than reporting on it
+- [ ] **The merged `config_pluginAllowlist` in the built SystemUI artifact matches the declared set
+      exactly** — read out of the build, not inferred from overlay ordering. Added after ADR-014; it
+      gates Task 3 rather than reporting on it. **Currently red**: measured 2026-08-07, Aurora's entry
+      absent. ADR-015 widened it from *contains Aurora* to *exact set*, because an overlay replaces an
+      array and winning can drop the other parties' entries as silently as losing
 - [ ] Something is visible on a device, and a person has looked at it
 - [ ] Nothing was built whose only purpose was to make the looking possible
 
 The fifth is the sprint's real test and the first in this project that no gate can check. The sixth
 is what keeps the fifth honest. The fourth was inserted between them and the others deliberately: it
 is the only one that must go green *before* work starts rather than as a result of it.
+
+---
+
+## 8. Retrospective notes, accumulated while the sprint is open
+
+Written as they happen rather than reconstructed at the end, because the useful detail is the part
+that stops being surprising once you know the answer.
+
+### The recurring shape: the result was right and the explanation was wrong
+
+Twice, and the second time is what makes it worth naming:
+
+| | first belief | measurement | what actually held |
+|---|---|---|---|
+| **Task 2** | a plugin that loads on this device will load anywhere | read the gate in `PluginActionManager.kt` | true only because the emulator is `userdebug`. On a `user` build an unallowlisted plugin is refused, silently |
+| **Task 3.0b** | the product RRO wins because its manifest says `priority="1"` | `cmd overlay dump` on a booted device | the product RRO does win — but `mPriority` is a partition-derived global index (32 vs 4). The manifest number is discarded |
+
+**Both predictions were correct and both mechanisms were wrong.** A model that gets the outcome right
+is not thereby validated, and the cost of the error only appears at the *next* decision — the
+`priority="1"` reading had already produced a proposed fix (`android:priority="2"`) that could not
+have worked.
+
+The practice this argues for is narrow and cheap: when a measurement confirms what was expected, ask
+the artifact *why* as well as *whether*. Task 3.0b cost one emulator boot and refuted a plan.
+
+### A note existed and did not propagate
+
+Run 2 of Task 3.0 failed because the measurement script used `set -u`, which breaks `envsetup.sh`.
+That fact was already written on the build VM — `07-discover.sh` line 2 — in a sibling script written
+for another purpose months of work earlier.
+
+Not a knowledge gap; a **local convention that nothing carried forward**. No gate is proposed for it:
+the next instance will be a different convention in a different script, and the only thing that
+generalises is *read a script that already works before writing a new one*, which is a habit and not
+a check. Recorded because it is the same shape as the subject the sprint was measuring — two overlay
+files each holding a fact, neither aware of the other.
+
+### A verification cost was removed by evidence, not by assumption
+
+Task 3.0b established that `aapt2 dump` on the built RRO returns exactly what `cmd overlay lookup`
+returns on a booted device, for this resource. That turns a runtime check into a build-time one and
+deletes *flash → boot → adb* from the loop.
+
+Worth keeping honest: the equivalence was **measured for one resource on one build**, and it is the
+gate's licence rather than a law. If the resolution path changes — a mutable overlay, a fabricated
+`.frro`, a `partition_order.xml` appearing — the licence needs re-measuring.
