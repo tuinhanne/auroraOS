@@ -622,11 +622,14 @@ come first — in which case this sprint stops and says so, exactly as Sprint 03
       out not to exist. **Inside SystemUI, as a plugin**; the two misses are recorded above
 - [x] Question 2 answered — **animated**, and Sprint 08 was named as the prerequisite rather
       than something discovered mid-task
-- [ ] **The merged `config_pluginAllowlist` in the built SystemUI artifact matches the declared set
-      exactly** — read out of the build, not inferred from overlay ordering. Added after ADR-014; it
-      gates Task 3 rather than reporting on it. **Currently red**: measured 2026-08-07, Aurora's entry
-      absent. ADR-015 widened it from *contains Aurora* to *exact set*, because an overlay replaces an
-      array and winning can drop the other parties' entries as silently as losing
+- [x] **The merged `config_pluginAllowlist` matches the declared set exactly** — read out of the
+      build, not inferred from overlay ordering, and then confirmed at runtime because ADR-016 changed
+      the winning artifact's partition and mechanism, which revoked the equivalence licence ADR-015
+      had measured for a different path. `cmd overlay lookup` resolves it from
+      `/system_ext/overlay/AuroraSystemUIOverlay.apk` with all four entries. ADR-015 widened this
+      criterion from *contains Aurora* to *exact set*; ADR-016 widened it again to *upstream ∪
+      Aurora's own*, because Aurora now owns the winning artifact and can no longer use it as
+      evidence about itself
 - [ ] Something is visible on a device, and a person has looked at it
 - [ ] Nothing was built whose only purpose was to make the looking possible
 

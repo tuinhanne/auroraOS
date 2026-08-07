@@ -72,10 +72,14 @@ DECLARED  = expect-entry lines in the contract
 PASS  iff   AURORA == DECLARED == UPSTREAM ∪ { aurora.platform.systemui }
 ```
 
-The middle equality is the tautology, kept because it still catches a hand-edited RRO. **The right-hand
-equality is the gate.** When Lineage adds a plugin, `UPSTREAM` grows, the union stops matching
-`DECLARED`, and the third verdict ADR-015 named fires — a human decides whether Aurora carries the new
-entry forward.
+**The left equality is intentionally retained.** Under a normal build it is tautological — the RRO is
+generated from the contract, so of course they agree — but it still detects an RRO that was
+hand-edited, partially built, or otherwise corrupted, and those are exactly the cases where a
+build-time gate is the only thing looking.
+
+**The right equality is the gate.** When Lineage adds a plugin, `UPSTREAM` grows, the union stops
+matching `DECLARED`, and the third verdict ADR-015 named fires — a human decides whether Aurora
+carries the new entry forward.
 
 This is what ADR-015 meant by judging each candidate on *does the gate still work under it?* It does,
 but not unchanged: **owning the winning artifact costs you the ability to use it as evidence about
@@ -112,3 +116,50 @@ nothing reports it.
 - **Aurora now ships an APK it did not previously have**, separate from ADR-014's plugin. Two APKs
   with different jobs: one draws, one declares.
 - The probe from Task 3.1 is deleted with this change. It answered its one question.
+
+- **No Aurora resource migrates to an RRO by default.** Future resources ask whether they are
+  contested first. Only a contested resource pays the cost of becoming its own runtime artifact — a
+  Soong module, an installed APK, a partition dependency, and a gate that can no longer use that
+  artifact as evidence about itself. **The dividing line is contest, not mechanism preference**, and
+  reading this ADR as *"RRO is the better mechanism"* inverts it.
+
+## Confirmed at runtime, 2026-08-07 — and the licence was re-measured rather than inherited
+
+ADR-015 licensed a build-time-only gate on a measured equivalence between `aapt2 dump` and
+`cmd overlay lookup`. **That measurement was taken on the product RRO.** This ADR moves the winning
+artifact to a different partition, a different module type and a different resolution path, so the
+licence did not carry over — the clause in ADR-015 that says it breaks with the path is the reason
+this boot happened rather than being skipped.
+
+```
+aurora.rro.systemui    STATE_ENABLED   mIsMutable=false   mPriority=39
+                       /system_ext/overlay/AuroraSystemUIOverlay.apk
+
+cmd overlay lookup com.android.systemui:array/config_pluginAllowlist
+    Found initial: /system_ext/overlay/AuroraSystemUIOverlay.apk
+    Overlaid:      /system_ext/overlay/AuroraSystemUIOverlay.apk
+    Best matching is from default configuration of aurora.rro.systemui
+      com.android.systemui
+      com.android.systemui.plugin.globalactions.wallet
+      org.lineageos.settings.device
+      aurora.platform.systemui
+```
+
+Build artifact and runtime agree again, on the new path. **The chain contract → built artifact →
+runtime is closed**, and each link was measured rather than assumed.
+
+The probe's removal was confirmed in the same boot: `/system_ext/overlay/` holds one APK, and
+`dimen/status_bar_clock_starting_padding` resolves to `12.0dip` — the vendor RRO's value, which is
+what it was before the probe existed. Deleting an instrument is also a change that needs checking.
+
+## What actually decided this
+
+Not that `system_ext` outranks `product`. That number only made one candidate *possible*.
+
+Aurora chose the mechanism under which **the gate retains the ability to say something false** — and
+then paid for it by rewriting the gate, because the winning artifact stopped being usable as evidence.
+A mechanism that made the gate green by construction would have been cheaper and would have been
+worse.
+
+*Evidence decides mechanism*, and the test is not "does this work?" but "if this were wrong, what
+would tell us?"
