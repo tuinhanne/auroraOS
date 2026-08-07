@@ -460,6 +460,30 @@ today; it does not say who *should own* `config_pluginAllowlist` — a resource 
 of AOSP's, Lineage's and Aurora's entries, where whoever writes it takes responsibility for
 preserving the parts they do not own. Task 3 stays closed until an ADR settles that.
 
+### Task 3.0c — the gate exists now, and it is red on purpose
+
+ADR-015 made the check a condition of accepting ownership rather than a later hardening, so it was
+built rather than promised. Three files, three roles, and none of them is two:
+
+```
+truth     frameworks/base/aurora/contracts/artifact/systemui-plugin-allowlist.contract
+observer  frameworks/base/aurora/tools/verify-plugin-allowlist.sh
+subject   out/target/product/*/product/overlay/SystemUI__*_rro_product.apk
+```
+
+The expected set is four `expect-entry:` lines in the contract, with the provenance of each recorded
+beside it — three of them belong to AOSP and Lineage and are the part Aurora is answerable for
+without owning. The script reads them; it does not contain them.
+
+`contracts/artifact/` is a **second family**, not an exception — see `contracts/README.md`. Source
+contracts are checkable from source; artifact contracts have a subject that does not exist until a
+build makes it. The directory split is also mechanical: `arch-test.sh` globs `contracts/*.contract`
+and would have reported *"layer not created yet"* about a contract with no layer.
+
+**The gate is red, and the contract says so** — `expect-status: red-until-mechanism-decided`. That
+line exists so that the red is legible as *the artifact does not yet satisfy a correct claim* rather
+than as an unfinished script. **What is not available is weakening the contract to make it green.**
+
 ---
 
 ## 4. Question 2 — does the first pixel need animation at all?
@@ -573,6 +597,15 @@ Each time, the implementation-level fact was available, correct, and load-bearin
 argument. **Being able to point at the file that produces something is not the same as knowing who is
 answerable for what it means** — and the failure mode is identical in all three: a decision gets made
 at the level where the evidence was easiest to find.
+
+Put more precisely, because it explains why every one of those first readings *felt* right:
+
+> **Implementation repeatedly gave the correct answer to the wrong question.**
+
+`ExtensionController` really is the seam; overlay ordering really does predict the winner; the
+resource writer really does determine the value. Nothing was false. Each was an accurate answer to a
+question nobody had asked, standing in for one nobody had separated out — which is why none of them
+looked like an error until the next decision was built on it.
 
 ### The recurring shape: the result was right and the explanation was wrong
 

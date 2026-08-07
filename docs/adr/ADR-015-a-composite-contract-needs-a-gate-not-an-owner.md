@@ -84,6 +84,20 @@ What this ADR does is make the mechanism question smaller. Any candidate is now 
 criterion — *does the gate above still work under it?* — and every candidate that writes the whole
 array satisfies it equally, so the mechanism can be chosen on cost and portability alone.
 
+**And the measurement will not choose it.** Two questions are involved and they close separately:
+
+```
+where does system_ext rank?   →  a measurement    →  answers "what does Android do?"
+which mechanism does Aurora use?  →  an ADR       →  answers "what does Aurora choose?"
+```
+
+The number is a precondition, not a verdict. Once it exists there is still maintenance cost,
+portability between the emulator and a device tree, dependence on product configuration, and whether
+the gate survives the choice — none of which an overlay priority index knows anything about.
+**Collapsing the two is the same mistake this sprint has already made three times**, in the form
+recorded in the retrospective: letting the level where the evidence was easiest to find decide a
+question that lives at another level.
+
 ## Rejected — patching Lineage's overlay file
 
 The genuine alternative, and it has a real argument behind it that deserves stating rather than
@@ -138,9 +152,34 @@ particular filename:
 expectation in this project, and its `key: value` / repeated-key format is what `values_of` in
 `arch-test.sh` already parses. That is where this belongs, and naming it costs nothing to reverse.
 
-**One difference has to stay visible, though.** Every existing contract is checkable without building
-anything — `arch-test.sh` reads source and `Android.bp` files and finishes in seconds. This one
-cannot be: its subject is a merged resource that only a build produces. So it sits beside the others
-and is **enforced by a different tool**, and that split is a property of the claim rather than an
-inconsistency. A contract about Aurora's own source can be checked from the source; a contract about
-what survives someone else's overlay cannot.
+### Three roles, and none of them may be two
+
+| role | who |
+|---|---|
+| **truth** | `contracts/artifact/systemui-plugin-allowlist.contract` |
+| **observer** | `tools/verify-plugin-allowlist.sh` |
+| **subject** | the merged RRO the build produces |
+
+*"The gate does not own the truth"* stops being a slogan at the point these are three files.
+
+### And this is a second family of contract, not an exception
+
+Every contract Aurora had until now is checkable **without building anything** — `arch-test.sh` reads
+source and `Android.bp` and finishes in seconds. This one cannot be: its subject does not exist until
+a build makes it.
+
+That is not a special case to be apologised for. It is a **taxonomy**:
+
+| family | subject | observer | needs a build |
+|---|---|---|---|
+| **source contracts** | Aurora's own source and Soong modules | `arch-test.sh` | no |
+| **artifact contracts** | something a build produces, including files Aurora does not write | one script per contract | yes |
+
+Same authority, different reach, different observer. And the second family is not a one-off: merged
+resources, dexpreopt output, generated manifests and boot classpath images are all claims about
+produced artifacts. `config_pluginAllowlist` is the first, and `contracts/artifact/` exists so the
+second one has somewhere to go.
+
+They are separate directories for a mechanical reason too. `arch-test.sh` globs `contracts/*.contract`
+and would run five source checks against an artifact contract, reporting *"layer not created yet"* —
+a true sentence from a check nobody asked for, about a layer that does not exist.

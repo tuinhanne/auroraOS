@@ -1,0 +1,58 @@
+# config_pluginAllowlist - an artifact contract, and Aurora's first.
+#
+# ADR-015. The value of this resource is a union of three parties' entries, but a resource overlay
+# REPLACES an array rather than merging into one. So whoever writes it writes all of it, and owns
+# entries they did not choose. Aurora accepts that ownership only because this file plus
+# ../../tools/verify-plugin-allowlist.sh turn the obligation into a check.
+#
+# This file is the truth. The script is the observer. The merged RRO is the subject. None of the
+# three is allowed to be two of them at once - which is why the expected set lives here and not in
+# a heredoc inside the script.
+#
+# It is in contracts/artifact/ rather than beside the layer contracts because arch-test.sh globs
+# contracts/*.contract and would run five source checks against it, reporting "layer not created
+# yet" about a contract that has no layer. A true statement from a check that was not asked is
+# still a false report. See ../README.md for the two families.
+
+artifact:       config_pluginAllowlist
+target-package: com.android.systemui
+resource:       array/config_pluginAllowlist
+read-by:        PluginsModule.java -> PluginManager.Config -> PluginActionManager.kt:222
+
+# Set, not sequence. PluginManager.Config's constructor reads the list into privilegedPackages and
+# privilegedComponents - two Sets - and isPrivileged does membership tests. Order is discarded
+# before any consumer sees it, so a gate that compared order would be stricter than the thing it
+# claims to protect.
+comparison:     set
+
+# All four entries, and the first three are not decoration. They are the part of this contract
+# Aurora does not own and is nonetheless answerable for. Removing one is not a cleanup; it would
+# disable another project's plugin.
+expect-entry:   com.android.systemui
+expect-entry:   com.android.systemui.plugin.globalactions.wallet
+expect-entry:   org.lineageos.settings.device
+expect-entry:   aurora.platform.systemui
+
+# Provenance, so that a future diff can be argued about rather than guessed at.
+#
+#   com.android.systemui                              AOSP. frameworks/base/packages/SystemUI/res/values/config.xml
+#   com.android.systemui.plugin.globalactions.wallet  Lineage. vendor/lineage/overlay/common/...
+#   org.lineageos.settings.device                     Lineage. same file
+#   aurora.platform.systemui                          Aurora. ADR-014's plugin APK
+#
+# An entry appearing here that is not in this list means an upstream changed the array. That is a
+# decision, not a merge conflict: someone has to say whether Aurora carries it forward. The gate
+# fails in that direction deliberately, because auto-accepting would return this contract to the
+# state ADR-015 was written to end.
+
+# Where the subject is found. A path rather than a rule, because the artifact's location is a
+# consequence of the mechanism - and the mechanism is undecided. Sprint 09 measured that
+# PRODUCT_PACKAGE_OVERLAYS lands here; if the mechanism changes, this line changes with it.
+subject-glob:   out/target/product/*/product/overlay/SystemUI__*_rro_product.apk
+also-check:     out/target/product/*/system_ext/priv-app/SystemUI/SystemUI.apk
+
+# Known red as of 2026-08-07. Aurora's entry is absent: Aurora's overlay directory is appended to
+# PRODUCT_PACKAGE_OVERLAYS after Lineage's and loses the merge. The repair is a mechanism decision
+# that waits on one unmeasured number - where system_ext ranks among overlay partitions. This
+# contract is correct and the artifact does not satisfy it, which is what a red gate is for.
+expect-status:  red-until-mechanism-decided

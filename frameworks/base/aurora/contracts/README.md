@@ -1,8 +1,34 @@
-# Layer contracts
+# Contracts
+
+Two families, same authority, different observers. **Both are the truth; neither is the checker.**
+
+| family | location | subject | read by | needs a build? |
+|---|---|---|---|---|
+| **source contracts** | `*.contract` here | Aurora's own source and Soong modules | `../tools/arch-test.sh` | no |
+| **artifact contracts** | `artifact/*.contract` | something a build produces, including files Aurora does not write | one script per contract, e.g. `../tools/verify-plugin-allowlist.sh` | yes |
+
+The second family arrived with ADR-015 and is **not an exception to the first**. A contract about
+Aurora's own source can be checked by reading the source; a contract about what survives another
+project's resource overlay cannot be, because its subject does not exist until something is built.
+Same kind of claim, different reach, so a different observer.
+
+They are in separate directories for a mechanical reason as well as a taxonomic one: `arch-test.sh`
+globs `*.contract` in this directory and runs five source checks against each match. An artifact
+contract has no `source-root`, so it would be reported as *"layer not created yet"* — a true
+sentence from a check that was never asked, about a layer that does not exist. Separating the
+directories is cheaper than teaching one tool to ignore half its input.
+
+The source family is flat and the artifact family is nested, which is asymmetric. Moving the five
+existing files into `source/` would touch `arch-test.sh` and every reference to it, for no gain in
+what either family checks; it is deferred rather than overlooked.
+
+---
+
+## Source contracts
 
 One file per Aurora layer. Read by `../tools/arch-test.sh`; nothing else parses them.
 
-## Format
+### Format
 
 Plain text. One `key: value` pair per line. `#` starts a comment. A repeated key adds
 another entry to that key's list — there is no array syntax.
@@ -18,7 +44,7 @@ another entry to that key's list — there is no array syntax.
 | `allow-dep` | yes | Soong dependencies this module may declare |
 | `forbid-dep` | yes | Soong dependencies that must never be declared |
 
-## Rules
+### Rules
 
 `allow-aurora-import` is a whitelist: any `aurora.*` import outside it, and outside the
 layer's own `package-root`, is a violation. Non-Aurora imports are governed only by
@@ -30,3 +56,43 @@ false failures.
 
 A layer whose `source-root` does not exist is reported as `skip`, not as a failure. A
 layer that has not been built yet is not a violation.
+
+---
+
+## Artifact contracts
+
+In `artifact/`. Same `key: value` format, different keys, because the subject is a built file
+rather than a source tree.
+
+| Key | Repeats | Meaning |
+|---|---|---|
+| `artifact` | no | Short name of the thing being constrained |
+| `target-package` | no | The package whose resources are the subject, where that applies |
+| `resource` | no | The specific resource, e.g. `array/config_pluginAllowlist` |
+| `read-by` | no | The runtime path that consumes it — so a reader can check the claim is still true |
+| `comparison` | no | `set` or `sequence`. Which one is a fact about the consumer, not a preference |
+| `expect-entry` | yes | The declared contents |
+| `subject-glob` | yes | Where the built artifact is found |
+| `expect-status` | no | Present only when the contract is knowingly red, with the reason |
+
+### Rules
+
+**The contract is the truth and the script is not.** An expected value that lives inside the
+checking tool is not a contract — it is an implementation detail that happens to be enforced, and
+it will be changed by whoever is editing the tooling rather than by whoever is deciding what Aurora
+guarantees. This is the whole reason the family exists as files.
+
+**`comparison` is derived, not chosen.** `set` is correct for `config_pluginAllowlist` because
+`PluginManager.Config` reads the list into two `Set`s before any consumer sees it, so a gate that
+compared order would be stricter than the thing it protects. A different resource may genuinely be
+ordered; that has to be established from the consumer.
+
+**Both directions of a set comparison are failures**, and they are not the same failure. A missing
+entry means Aurora lost. An *undeclared* entry means an upstream changed the array — and because a
+resource overlay replaces rather than merges, Aurora winning can drop another project's entries just
+as silently as Aurora losing. Auto-accepting the second direction would return the contract to being
+a hope.
+
+**A knowingly-red contract is legitimate and must say so.** `expect-status` records that the claim
+is correct and the artifact does not yet satisfy it. What is not legitimate is weakening the
+contract so the gate goes green.
