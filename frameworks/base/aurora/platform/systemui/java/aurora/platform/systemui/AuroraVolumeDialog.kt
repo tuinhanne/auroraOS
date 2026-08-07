@@ -98,8 +98,15 @@ class AuroraVolumeDialog : VolumeDialog {
     /** Where the plugin's own resources live. Not [sysuiContext] - that resolves SystemUI's. */
     private var pluginContext: Context? = null
 
-    /** 0 = slim, 1 = wide. Animated once on appearance and then only downward. */
-    private var widthNow: Float = 0f
+    /**
+     * 0 = slim, 1 = wide. Animated once per appearance, and only downward.
+     *
+     * Starts at 1 and is reset to 1 on hide, so **every** appearance begins wide rather than the
+     * first one growing into it and the rest arriving wide. The bar showing up at its final entrance
+     * size is the iOS behaviour being copied; growing into it would be a second entrance animation
+     * competing with the fade.
+     */
+    private var widthNow: Float = 1f
 
     private var frameIndex: Long = 0
     private var lastFrameNanos: Long = 0
@@ -187,10 +194,13 @@ class AuroraVolumeDialog : VolumeDialog {
             showWindow()
             volume?.notifyVisible(true)
             volume?.getState()
-            // Wide on arrival, then narrow - and only on arrival. A press while the bar is already
+            animate(target = levelNow, fadeTo = 1f)
+            // Wide on arrival, then narrow — and only on arrival. A press while the bar is already
             // up must not widen it again: the widening is an entrance, not a reaction.
-            animate(target = levelNow, fadeTo = 1f, widthTo = if (wasHidden) 1f else widthNow)
-            if (wasHidden) scheduleNarrow()
+            if (wasHidden) {
+                animateWidth(1f)
+                scheduleNarrow()
+            }
             scheduleDismiss()
         }
 
@@ -205,13 +215,9 @@ class AuroraVolumeDialog : VolumeDialog {
             val span = (s.levelMax - s.levelMin).toFloat()
             val fraction = if (span > 0f) (s.level - s.levelMin) / span else 0f
             view?.icon = iconFor(stream)
-            animate(
-                target = fraction.coerceIn(0f, 1f),
-                fadeTo = if (shown) 1f else alphaNow,
-                // Deliberately unchanged. Pressing again keeps whatever width the entrance left,
-                // which after the first moment is slim.
-                widthTo = widthNow,
-            )
+            // Width is not mentioned here on purpose. Whatever the entrance or the narrow started
+            // keeps running; a state change has no opinion about how wide the bar is.
+            animate(target = fraction.coerceIn(0f, 1f), fadeTo = if (shown) 1f else alphaNow)
             // Each change is the user still acting, so the DISMISS clock restarts. The NARROW clock
             // does not - the bar widens once and stays slim however long the user keeps pressing.
             if (shown) scheduleDismiss()
@@ -255,7 +261,7 @@ class AuroraVolumeDialog : VolumeDialog {
      * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant —
      * the continuity is in the `from`, not in a special case.
      */
-    private fun animate(target: Float, fadeTo: Float, widthTo: Float) {
+    private fun animate(target: Float, fadeTo: Float) {
         val seq = ++animationSeq
         levelHandle = controller.animator.play(
             Animation(
@@ -273,12 +279,28 @@ class AuroraVolumeDialog : VolumeDialog {
                 to = fadeTo,
             )
         )
+        requestFrame()
+    }
+
+    /**
+     * Width has its own life, and this separation is a bug fix rather than tidiness.
+     *
+     * The first version passed `widthTo` through [animate] and every state change re-targeted the
+     * width to `widthNow` — "leave it where it is". That reads as harmless and is not: five key
+     * presses arrive within a few milliseconds, **before any frame has ticked**, so `widthNow` is
+     * still ≈0 and the entrance's 0→1 gets replaced four times by 0→0. The bar never widened, and
+     * the code that did it looked like the code that preserved it.
+     *
+     * *Leave it alone* and *re-target it to its current value* are different instructions. Only one
+     * of them survives a value that has not been sampled yet.
+     */
+    private fun animateWidth(to: Float) {
         widthHandle = controller.animator.play(
             Animation(
-                name = "aurora.volume.width.$seq",
+                name = "aurora.volume.width.${++animationSeq}",
                 spec = SpringSpec(),
                 from = widthNow,
-                to = widthTo,
+                to = to,
             )
         )
         requestFrame()
@@ -305,7 +327,7 @@ class AuroraVolumeDialog : VolumeDialog {
         volume?.notifyVisible(false)
         // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
         // to full opacity first - volume-overlay.md §4's "no blink when a press interrupts a fade".
-        animate(target = levelNow, fadeTo = 0f, widthTo = widthNow)
+        animate(target = levelNow, fadeTo = 0f)
     }
 
     /**
@@ -320,9 +342,7 @@ class AuroraVolumeDialog : VolumeDialog {
         handler.postDelayed(narrowRunnable, NARROW_DELAY_MS)
     }
 
-    private val narrowRunnable = Runnable {
-        animate(target = levelNow, fadeTo = alphaNow, widthTo = 0f)
-    }
+    private val narrowRunnable = Runnable { animateWidth(0f) }
 
     /** Which stream is being changed, as a picture. Falls back to media rather than to nothing. */
     private fun iconFor(stream: Int): android.graphics.drawable.Drawable? {
@@ -414,8 +434,11 @@ class AuroraVolumeDialog : VolumeDialog {
         handler.removeCallbacks(dismissRunnable)
         handler.removeCallbacks(narrowRunnable)
         // Reset to the wide form so the next appearance is an entrance again rather than resuming
-        // wherever the last one stopped.
+        // wherever the last one stopped. The handle goes with it: a finished 1→0 animation left in
+        // place would write 0 back over this on the very next frame, and the reset would look like
+        // it had never happened.
         widthNow = 1f
+        widthHandle = null
         if (!shown) return
         val wm = windowManager ?: return
         val v = view ?: return
