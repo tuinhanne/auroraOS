@@ -49,6 +49,16 @@ allow-import:   android.os.
 allow-import:   android.util.
 allow-import:   android.view.
 
+# Added when the overlay grew a stream icon. AudioManager.STREAM_RING and friends are the only
+# names for the integer VolumeDialogController.State.activeStream carries - the plugin API exposes
+# the number and no way to interpret it, so a plugin that wants to say WHICH stream is changing has
+# to reach for the constants.
+#
+# Only the constants. Nothing here constructs an AudioManager or reads a level from one: that would
+# be a second source of truth for a number SystemUI already pushes through onStateChanged, and the
+# two would disagree the first time one of them was late.
+allow-import:   android.media.
+
 # The plugin API surface, and only that. com.android.systemui.plugins is what SystemUI publishes for
 # plugins to compile against - VolumeDialog, VolumeDialogController, PluginDependency and the
 # annotations. Nothing under com.android.systemui.volume or com.android.server is admitted, because

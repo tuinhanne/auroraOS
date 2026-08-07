@@ -17,6 +17,7 @@ package aurora.platform.systemui
 
 import android.content.Context
 import android.graphics.PixelFormat
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -92,6 +93,13 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private var levelHandle: AnimationHandle? = null
     private var fadeHandle: AnimationHandle? = null
+    private var widthHandle: AnimationHandle? = null
+
+    /** Where the plugin's own resources live. Not [sysuiContext] - that resolves SystemUI's. */
+    private var pluginContext: Context? = null
+
+    /** 0 = slim, 1 = wide. Animated once on appearance and then only downward. */
+    private var widthNow: Float = 0f
 
     private var frameIndex: Long = 0
     private var lastFrameNanos: Long = 0
@@ -102,12 +110,19 @@ class AuroraVolumeDialog : VolumeDialog {
     private var levelNow: Float = 0f
     private var alphaNow: Float = 0f
 
+    private var slimPx: Float = 0f
+    private var widePx: Float = 0f
+
     private val handler: Handler = Handler(Looper.getMainLooper())
 
     // ---------------------------------------------------------------- Plugin
 
     override fun onCreate(sysuiContext: Context, pluginContext: Context) {
         this.sysuiContext = sysuiContext
+        // Both are handed over for a reason: sysuiContext reaches WindowManager and the display,
+        // pluginContext reaches this APK's own res/. Using the wrong one for a drawable resolves
+        // an id from SystemUI's table and returns something unrelated or nothing at all.
+        this.pluginContext = pluginContext
         Log.i(TAG, "onCreate: Aurora's volume overlay is loaded inside SystemUI")
     }
 
@@ -168,10 +183,14 @@ class AuroraVolumeDialog : VolumeDialog {
     private val callbacks = object : VolumeDialogController.Callbacks {
 
         override fun onShowRequested(reason: Int, keyguardLocked: Boolean, lockTaskModeState: Int) {
+            val wasHidden = !shown
             showWindow()
             volume?.notifyVisible(true)
             volume?.getState()
-            animate(target = levelNow, fadeTo = 1f)
+            // Wide on arrival, then narrow - and only on arrival. A press while the bar is already
+            // up must not widen it again: the widening is an entrance, not a reaction.
+            animate(target = levelNow, fadeTo = 1f, widthTo = if (wasHidden) 1f else widthNow)
+            if (wasHidden) scheduleNarrow()
             scheduleDismiss()
         }
 
@@ -185,9 +204,16 @@ class AuroraVolumeDialog : VolumeDialog {
             val s = state.states.get(stream) ?: return
             val span = (s.levelMax - s.levelMin).toFloat()
             val fraction = if (span > 0f) (s.level - s.levelMin) / span else 0f
-            animate(target = fraction.coerceIn(0f, 1f), fadeTo = if (shown) 1f else alphaNow)
-            // Each change is the user still acting, so the clock restarts rather than running out
-            // mid-gesture.
+            view?.icon = iconFor(stream)
+            animate(
+                target = fraction.coerceIn(0f, 1f),
+                fadeTo = if (shown) 1f else alphaNow,
+                // Deliberately unchanged. Pressing again keeps whatever width the entrance left,
+                // which after the first moment is slim.
+                widthTo = widthNow,
+            )
+            // Each change is the user still acting, so the DISMISS clock restarts. The NARROW clock
+            // does not - the bar widens once and stays slim however long the user keeps pressing.
             if (shown) scheduleDismiss()
         }
 
@@ -229,7 +255,7 @@ class AuroraVolumeDialog : VolumeDialog {
      * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant —
      * the continuity is in the `from`, not in a special case.
      */
-    private fun animate(target: Float, fadeTo: Float) {
+    private fun animate(target: Float, fadeTo: Float, widthTo: Float) {
         val seq = ++animationSeq
         levelHandle = controller.animator.play(
             Animation(
@@ -245,6 +271,14 @@ class AuroraVolumeDialog : VolumeDialog {
                 spec = SpringSpec(),
                 from = alphaNow,
                 to = fadeTo,
+            )
+        )
+        widthHandle = controller.animator.play(
+            Animation(
+                name = "aurora.volume.width.$seq",
+                spec = SpringSpec(),
+                from = widthNow,
+                to = widthTo,
             )
         )
         requestFrame()
@@ -271,7 +305,35 @@ class AuroraVolumeDialog : VolumeDialog {
         volume?.notifyVisible(false)
         // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
         // to full opacity first - volume-overlay.md §4's "no blink when a press interrupts a fade".
-        animate(target = levelNow, fadeTo = 0f)
+        animate(target = levelNow, fadeTo = 0f, widthTo = widthNow)
+    }
+
+    /**
+     * Narrows once, shortly after the entrance.
+     *
+     * NOT rescheduled on later presses, and that is the requested behaviour rather than an
+     * omission: the wide form exists to say *which* stream is being changed, which is information
+     * the first press carries and the fifth does not.
+     */
+    private fun scheduleNarrow() {
+        handler.removeCallbacks(narrowRunnable)
+        handler.postDelayed(narrowRunnable, NARROW_DELAY_MS)
+    }
+
+    private val narrowRunnable = Runnable {
+        animate(target = levelNow, fadeTo = alphaNow, widthTo = 0f)
+    }
+
+    /** Which stream is being changed, as a picture. Falls back to media rather than to nothing. */
+    private fun iconFor(stream: Int): android.graphics.drawable.Drawable? {
+        val ctx = pluginContext ?: return null
+        val id = when (stream) {
+            AudioManager.STREAM_RING, AudioManager.STREAM_NOTIFICATION -> R.drawable.ic_aurora_ring
+            AudioManager.STREAM_ALARM -> R.drawable.ic_aurora_alarm
+            AudioManager.STREAM_VOICE_CALL -> R.drawable.ic_aurora_call
+            else -> R.drawable.ic_aurora_media
+        }
+        return ctx.getDrawable(id)
     }
 
     private fun requestFrame() {
@@ -289,13 +351,20 @@ class AuroraVolumeDialog : VolumeDialog {
 
         levelHandle?.let { levelNow = it.value }
         fadeHandle?.let { alphaNow = it.value }
+        widthHandle?.let { widthNow = it.value }
 
         view?.let {
             it.level = levelNow
             it.alpha01 = alphaNow
+            it.trackWidthPx = slimPx + (widePx - slimPx) * widthNow
+            // The icon belongs to the wide form. It leaves faster than the width so it is gone
+            // before the pill is too narrow to hold it, rather than being clipped on the way out.
+            it.iconAlpha01 = (widthNow * ICON_FADE_GAIN).coerceIn(0f, 1f)
         }
 
-        val running = (levelHandle?.isRunning == true) || (fadeHandle?.isRunning == true)
+        val running = (levelHandle?.isRunning == true) ||
+            (fadeHandle?.isRunning == true) ||
+            (widthHandle?.isRunning == true)
         if (running) {
             requestFrame()
         } else if (alphaNow <= 0.01f) {
@@ -312,8 +381,13 @@ class AuroraVolumeDialog : VolumeDialog {
         val wm = windowManager ?: return
         val v = view ?: return
         val density = v.resources.displayMetrics.density
+        slimPx = SLIM_DP * density
+        widePx = WIDE_DP * density
+        v.trackWidthPx = slimPx + (widePx - slimPx) * widthNow
         val lp = WindowManager.LayoutParams(
-            (WIDTH_DP * density).toInt(),
+            // The window is always the WIDE size. Narrowing happens inside it, so no layout pass
+            // and no surface resize lands on the animation's critical path.
+            (WIDE_DP * density).toInt(),
             (HEIGHT_DP * density).toInt(),
             windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -338,6 +412,10 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private fun hideWindow() {
         handler.removeCallbacks(dismissRunnable)
+        handler.removeCallbacks(narrowRunnable)
+        // Reset to the wide form so the next appearance is an entrance again rather than resuming
+        // wherever the last one stopped.
+        widthNow = 1f
         if (!shown) return
         val wm = windowManager ?: return
         val v = view ?: return
@@ -352,9 +430,13 @@ class AuroraVolumeDialog : VolumeDialog {
         const val TAG = "AuroraVolume"
 
         /** A slim vertical bar. One shape, one number, per Sprint 09's third criterion. */
-        const val WIDTH_DP = 10f
+        const val SLIM_DP = 10f
+
+        /** Wide enough to hold a legible icon, which is the only reason the wide form exists. */
+        const val WIDE_DP = 34f
+
         const val HEIGHT_DP = 160f
-        const val MARGIN_DP = 16f
+        const val MARGIN_DP = 12f
 
         /**
          * How long the overlay stays after the last change.
@@ -362,7 +444,15 @@ class AuroraVolumeDialog : VolumeDialog {
          * Aurora's number, not AOSP's, and deliberately not read from
          * `config_volumeDialogTimeout`: that resource governs a dialog Aurora replaced, and
          * inheriting it would make this look like a value someone chose for this surface.
+         *
+         * 1.5s rather than 2.5s, because 2.5s was tried on a device and read as slow.
          */
-        const val DISMISS_DELAY_MS = 2_500L
+        const val DISMISS_DELAY_MS = 1_500L
+
+        /** How long the wide form is held before narrowing. Long enough to read the icon. */
+        const val NARROW_DELAY_MS = 550L
+
+        /** Makes the icon finish fading before the pill finishes narrowing. */
+        const val ICON_FADE_GAIN = 1.8f
     }
 }

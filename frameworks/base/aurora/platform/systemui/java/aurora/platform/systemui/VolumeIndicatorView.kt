@@ -20,6 +20,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.drawable.Drawable
 import android.view.View
 
 /**
@@ -58,6 +59,40 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             }
         }
 
+    /**
+     * Track width in pixels, animated between slim and wide.
+     *
+     * The window is a constant width and this narrows inside it, rather than the window resizing.
+     * A `WindowManager.updateViewLayout` per frame would put a layout pass and a surface resize on
+     * the animation's critical path for a shape that could simply be drawn smaller.
+     */
+    var trackWidthPx: Float = 0f
+        set(value) {
+            if (value != field) {
+                field = value
+                invalidate()
+            }
+        }
+
+    /** Shown while the track is wide, gone once it narrows. Owned by the caller. */
+    var icon: Drawable? = null
+        set(value) {
+            if (value !== field) {
+                field = value
+                invalidate()
+            }
+        }
+
+    /** 0..1, separate from [alpha01] so the icon can leave before the bar does. */
+    var iconAlpha01: Float = 0f
+        set(value) {
+            val clamped = value.coerceIn(0f, 1f)
+            if (clamped != field) {
+                field = clamped
+                invalidate()
+            }
+        }
+
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
@@ -69,24 +104,70 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
     private val rect = RectF()
 
     override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat()
         val h = height.toFloat()
-        if (w <= 0f || h <= 0f) return
+        val tw = trackWidthPx
+        if (tw <= 0f || h <= 0f) return
 
-        val radius = w / 2f
+        // Centred inside a window that stays at the wide size, so narrowing is a drawing change and
+        // not a window change.
+        val left = (width - tw) / 2f
+        val right = left + tw
+        val radius = tw / 2f
         val a = (alpha01 * 255f).toInt().coerceIn(0, 255)
 
         // Track: the full height, dim.
         trackPaint.color = Color.argb((a * 0.35f).toInt().coerceIn(0, 255), 255, 255, 255)
-        rect.set(0f, 0f, w, h)
+        rect.set(left, 0f, right, h)
         canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
         // Fill: grows upward from the bottom, because that is the direction a volume level means.
         // A zero-height fill still draws its rounded cap, so the indicator never looks broken at
         // silence - it looks empty, which is a different thing and the true one.
         val filled = (h * level).coerceAtLeast(0f)
+        val fillTop = h - filled
         fillPaint.color = Color.argb(a, 255, 255, 255)
-        rect.set(0f, h - filled, w, h)
+        rect.set(left, fillTop, right, h)
         canvas.drawRoundRect(rect, radius, radius, fillPaint)
+
+        drawIcon(canvas, left, tw, h, fillTop)
+    }
+
+    /**
+     * The stream icon, near the bottom of the track.
+     *
+     * Its colour is decided by what is behind it rather than fixed: white on the dim track, dark on
+     * the white fill. A single colour would vanish at one end of the range - which is the kind of
+     * thing that only shows up when someone actually turns the volume down.
+     */
+    private fun drawIcon(canvas: Canvas, left: Float, tw: Float, h: Float, fillTop: Float) {
+        val d = icon ?: return
+        val ia = (iconAlpha01 * alpha01 * 255f).toInt().coerceIn(0, 255)
+        if (ia == 0) return
+
+        val size = (tw * ICON_FRACTION)
+        val cx = left + tw / 2f
+        val cy = h - tw / 2f - (tw - size) / 2f
+        val half = size / 2f
+
+        d.setBounds(
+            (cx - half).toInt(),
+            (cy - half).toInt(),
+            (cx + half).toInt(),
+            (cy + half).toInt(),
+        )
+        d.setTint(if (cy > fillTop) ON_FILL else ON_TRACK)
+        d.alpha = ia
+        d.draw(canvas)
+    }
+
+    private companion object {
+        /** Icon size as a fraction of the track width, leaving a visible margin inside the pill. */
+        const val ICON_FRACTION = 0.55f
+
+        /** Dark enough to read against the white fill. */
+        val ON_FILL = Color.argb(255, 26, 26, 26)
+
+        /** White, for the dim track when the level is below the icon. */
+        val ON_TRACK = Color.WHITE
     }
 }
