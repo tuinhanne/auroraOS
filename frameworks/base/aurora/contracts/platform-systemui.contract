@@ -1,84 +1,49 @@
-# aurora.platform.systemui - the fifth layer. Android again, but a different process.
+# aurora.platform.systemui - an assembly unit, and after Sprint 10 that is ALL it is.
 #
-# ADR-014. ADR-012 created the fourth layer because of the Android dependency, which is a fact about
-# the build: sdk_version and platform_apis are module-global. This layer exists for a stronger
-# reason that is not about the build at all - it runs inside SystemUI while aurora-platform-android
-# runs inside system_server, so the two can never share an object and every interaction across the
-# boundary is IPC by construction. Soong happens to agree (java_library xor android_app), but if
-# Soong changed tomorrow the separation would be exactly where it is.
+# ADR-014 created this layer because of process: it runs inside SystemUI while
+# aurora-platform-android runs inside system_server. That is still why the layer exists. What changed
+# in Sprint 10 is that the layer stopped being a place code lives.
+#
+# It now owns exactly three facts, all of them properties of a deployed artifact rather than of any
+# behaviour:
+#
+#   - the APK's package name, which MUST equal Aurora's entry in config_pluginAllowlist
+#     (PluginInstance.kt:301 calls isPackagePrivileged(pluginAppInfo.packageName))
+#   - the <uses-permission> for com.android.systemui.permission.PLUGIN
+#   - the <service> that makes a feature findable, naming a class in a feature's package
+#
+# Features are android_library modules with their own contracts - see feature-volume.contract. This
+# is the artifact they ship in, and one artifact can ship several.
 
 layer:          platform-systemui
 module:         AuroraSystemUIPlugin
 package-root:   aurora.platform.systemui
 source-root:    platform/systemui/java
 
-# The process boundary, expressed twice.
+# THE DECLARATION THAT MATTERS, and it was added because the alternatives both lied.
 #
-# Once by ABSENCE: allow-aurora-import is a default-deny whitelist, and aurora.platform.android. is
-# not on it. That is the primary enforcement and it needed no new contract verb.
+# When Sprint 10 emptied this module, arch-test.sh had two ways to handle it and both were wrong:
 #
-# aurora.platform. is also absent, and that is measured rather than principled: nothing here imports
-# it. It goes on the list the day a compiler asks.
-allow-aurora-import: aurora.sdk.
-allow-aurora-import: aurora.runtime.
-
-# And once by NAME, below. Redundant with the whitelist on purpose: a reader of this file should be
-# able to see the boundary without knowing that allow-aurora-import is default-deny, and a future
-# edit that adds aurora.platform.android. to the whitelist by mistake still hits this line.
-forbid-import:  aurora.platform.android.
-
-forbid-import:  android.
-forbid-import:  com.android.
-forbid-import:  aurora.device.
-forbid-import:  org.lineageos.
-
-# What Task 3 measured, entry by entry, and nothing anticipated.
+#   source-root points at a deleted directory  ->  "skip: layer not created yet"
+#                                                  False. The layer exists and is finished.
+#   source-root omitted                        ->  every forbid-import reports ok
+#                                                  Vacuously green. A contract that checks nothing
+#                                                  while claiming to check everything.
 #
-#   android.content.        Context, handed in by Plugin.onCreate
-#   android.graphics.       Canvas, Paint, RectF, Color, PixelFormat - VolumeIndicatorView draws
-#   android.os.             Looper and Handler. Looper for the frame-source thread guard;
-#                           Handler because VolumeDialogController.addCallback demands one
-#   android.util.           Log. Same reason as Sprint 03 Task 4.4b: a plugin that loads silently
-#                           is indistinguishable from one that never loaded
-#   android.view.           Choreographer, View, WindowManager, Gravity. This is the entry
-#                           platform-android.contract:68 predicted would grow, and it grew here
-#                           instead - in a different contract, which is what ADR-014 arranged
-allow-import:   android.content.
-allow-import:   android.graphics.
-allow-import:   android.os.
-allow-import:   android.util.
-allow-import:   android.view.
+# The second is the dangerous one, and it was not specific to this module: ANY contract with a
+# typo'd source-root was passing that way. So the gate grew a third answer, and the check for it is
+# the point of this line rather than a formality - it asserts the absence, instead of tolerating it.
+expect-no-source: yes
 
-# Added when the overlay grew a stream icon. AudioManager.STREAM_RING and friends are the only
-# names for the integer VolumeDialogController.State.activeStream carries - the plugin API exposes
-# the number and no way to interpret it, so a plugin that wants to say WHICH stream is changing has
-# to reach for the constants.
-#
-# Only the constants. Nothing here constructs an AudioManager or reads a level from one: that would
-# be a second source of truth for a number SystemUI already pushes through onStateChanged, and the
-# two would disagree the first time one of them was late.
-allow-import:   android.media.
-
-# The plugin API surface, and only that. com.android.systemui.plugins is what SystemUI publishes for
-# plugins to compile against - VolumeDialog, VolumeDialogController, PluginDependency and the
-# annotations. Nothing under com.android.systemui.volume or com.android.server is admitted, because
-# reaching into SystemUI's implementation is exactly what the extension point exists to avoid.
-allow-import:   com.android.systemui.plugins.
-
-allow-dep:      aurora-sdk
-allow-dep:      aurora-runtime
+# Deps still matter, and they are the only thing left to enforce here. The APK may link features and
+# the plugin API, and nothing else.
+allow-dep:      AuroraVolumeFeature
 allow-dep:      SystemUIPluginLib
 
-# The boundary as a build fact as well as an import rule. A dependency edge here would be a link the
-# runtime cannot honour, and a compiler that accepted it would produce an APK that dies at load.
+# The process boundary, as a build fact. A dependency edge here would be a link the runtime cannot
+# honour, and an APK that accepted it would die at load.
 forbid-dep:     aurora-platform-android
 forbid-dep:     aurora-device
 
-# An android_app that touches WindowManager and Choreographer needs platform APIs, and this is
-# declared rather than assumed - the check that reads this refuses a module whose classpath does not
-# match its contract in either direction.
 expect-classpath: platform_apis
-
-# Device-only, for the same reason as the fourth layer: a host variant could never resolve
-# android.view.Choreographer, and pretending otherwise would re-create the shape ADR-012 rejected.
 expect-host-supported: no

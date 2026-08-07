@@ -18,6 +18,58 @@ value_of() { grep -E "^$1:" "$2" 2>/dev/null | head -1 | sed -E "s/^$1:[[:space:
 # Repeated key, one value per line.
 values_of() { grep -E "^$1:" "$2" 2>/dev/null | sed -E "s/^$1:[[:space:]]*//" | tr -d '\r'; }
 
+# Whether a contract declares that its module deliberately has no source of its own.
+#
+# Sprint 10 produced the first such module: aurora.platform.systemui became an assembly unit whose
+# features are separate libraries. Without this, arch-test had two answers and both lied - a deleted
+# source-root reported "layer not created yet" about a finished layer, and an omitted one reported
+# `ok` for every forbid-import while reading nothing at all.
+declares_no_source() { [ "$(value_of expect-no-source "$1")" = "yes" ]; }
+
+# Refuse a contract whose source-root cannot be read, instead of passing it silently.
+#
+# This is the check that would have caught the vacuous green, and it is deliberately not limited to
+# the empty case: a typo'd source-root resolved to a directory that exists and contains no matching
+# files, so every import check passed while the contract measured nothing. A contract that names a
+# source root must have sources there; one that declares it has none must have none.
+check_source_presence() {
+  local contract="$1"
+  local layer root src count
+  layer="$(value_of layer "$contract")"
+  root="$(value_of source-root "$contract")"
+
+  if declares_no_source "$contract"; then
+    if [ -z "$root" ]; then
+      fail "$layer declares expect-no-source but names no source-root to check it against"
+      return
+    fi
+    src="$AURORA_DIR/$root"
+    count="$(find "$src" -name '*.kt' -o -name '*.java' 2>/dev/null | wc -l)"
+    if [ "$count" -eq 0 ]; then
+      ok "$layer: assembly module with no source, as declared"
+    else
+      fail "$layer declares expect-no-source but $count source file(s) exist under $root"
+    fi
+    return
+  fi
+
+  if [ -z "$root" ]; then
+    fail "$layer names no source-root, so every import check below would pass without reading anything"
+    return
+  fi
+  src="$AURORA_DIR/$root"
+  if [ ! -d "$src" ]; then
+    skip "$layer: no sources at $root (layer not created yet)"
+    return
+  fi
+  count="$(find "$src" -name '*.kt' -o -name '*.java' 2>/dev/null | wc -l)"
+  if [ "$count" -eq 0 ]; then
+    fail "$layer names source-root '$root', which holds no .kt or .java - the import checks would be vacuous"
+  else
+    ok "$layer: $count source file(s) under $root"
+  fi
+}
+
 # Every import statement in a source tree, as bare package paths.
 imports_in() {
   # Java: terminated by a semicolon, may be `import static`.
@@ -32,6 +84,8 @@ imports_in() {
 
 check_forbidden_imports() {
   local contract="$1"
+  # An assembly module has nothing to read. check_source_presence has already asserted that.
+  declares_no_source "$contract" && return
   local layer src
   layer="$(value_of layer "$contract")"
   src="$AURORA_DIR/$(value_of source-root "$contract")"
@@ -97,6 +151,7 @@ check_allow_import_is_used() {
 # Any aurora.* import must be either the layer's own package or explicitly allowed.
 check_aurora_layering() {
   local contract="$1"
+  declares_no_source "$contract" && return
   local layer src own allowed imp violation=0
   layer="$(value_of layer "$contract")"
   src="$AURORA_DIR/$(value_of source-root "$contract")"
@@ -126,13 +181,36 @@ check_aurora_layering() {
   [ "$violation" -eq 0 ] && ok "$layer: all aurora.* imports are within the allowed layers"
 }
 
-# Print the Android.bp block whose name: field matches $1.
+# Print the Android.bp block whose name: field matches $1, from ANY Android.bp in the Aurora tree.
+#
+# It read only $AURORA_DIR/Android.bp until Sprint 10 Task 3, and that was not a small bug. Every
+# module declared in its own Android.bp was invisible to it, so `check_soong_deps`,
+# `expect-classpath` and `expect-host-supported` reported `skip: no Soong module named X` and were
+# read as "nothing to check". AuroraSystemUIPlugin had been in that state since Sprint 09: ADR-014
+# says the process boundary is enforced "as a build fact as well as an import rule", and the build
+# fact half was never verified once.
+#
+# Found by moving a module, not by reading the tool - the same way Sprint 09 found three bugs by
+# pressing a key.
 module_block() {
   awk -v want="\"$1\"" '
     /^[a-z_]+ \{/        { block = ""; inblock = 1 }
     inblock              { block = block $0 "\n" }
     inblock && /^\}/     { if (block ~ ("name: *" want)) printf "%s", block; inblock = 0 }
-  ' "$AURORA_DIR/Android.bp"
+  ' $(find "$AURORA_DIR" -name 'Android.bp' -type f 2>/dev/null | sort)
+}
+
+# Whether a contract describes a layer that actually exists, as opposed to one not written yet.
+#
+# The distinction decides whether a missing Soong module is a `skip` or a `fail`. A layer with real
+# sources, or one that declares it deliberately has none, must have a findable module; only a layer
+# whose source tree does not exist yet gets to be skipped.
+layer_is_live() {
+  local contract="$1"
+  declares_no_source "$contract" && return 0
+  local root
+  root="$(value_of source-root "$contract")"
+  [ -n "$root" ] && [ -d "$AURORA_DIR/$root" ]
 }
 
 check_soong_deps() {
@@ -143,8 +221,38 @@ check_soong_deps() {
   block="$(module_block "$module")"
 
   if [ -z "$block" ]; then
-    skip "$layer: no Soong module named $module"
+    # A live layer whose module cannot be found is a broken contract, not an unwritten one. Reported
+    # as a failure because the previous `skip` is precisely how AuroraSystemUIPlugin's dep and
+    # classpath rules went unchecked for a whole sprint.
+    if layer_is_live "$contract"; then
+      fail "$layer names Soong module '$module', which no Android.bp under aurora/ declares"
+    else
+      skip "$layer: no Soong module named $module (layer not created yet)"
+    fi
     return
+  fi
+
+  # allow-dep as a WHITELIST, not as documentation.
+  #
+  # Sprint 10 Task 3 calibration found that a dependency on no list at all passed silently: adding
+  # `guava` to a feature's static_libs left the gate green. contracts/README.md had already described
+  # allow-dep as "Soong dependencies this module may declare", so the rule was written down and not
+  # enforced - the same species as every other finding this sprint.
+  #
+  # Only static_libs and libs are read. Those are the two that put types on a module's compile
+  # classpath, which is what a layering rule is about; `defaults`, `srcs` and the rest do not.
+  local declared undeclared
+  declared="$(awk '
+      /^[[:space:]]*(static_libs|libs)[[:space:]]*:/ { inlist = 1 }
+      inlist { if (match($0, /"[^"]+"/)) print substr($0, RSTART + 1, RLENGTH - 2) }
+      inlist && /\]/ { inlist = 0 }
+    ' <<< "$block" | sort -u)"
+  undeclared="$(comm -23 <(echo "$declared") <(values_of allow-dep "$contract" | sort -u))"
+  if [ -n "$undeclared" ]; then
+    fail "$module declares dependencies its contract does not permit:"
+    echo "$undeclared" | sed 's/^/          /'
+  else
+    ok "$module: every static_libs/libs entry is on its allow-dep list"
   fi
 
   local bad=0
@@ -252,6 +360,7 @@ check_soong_deps() {
 # copied elsewhere within a few sprints.
 check_forbidden_calls() {
   local contract="$1"
+  declares_no_source "$contract" && return
   local layer src
   layer="$(value_of layer "$contract")"
   src="$AURORA_DIR/$(value_of source-root "$contract")"
@@ -418,6 +527,7 @@ main() {
   local contract
   for contract in "$CONTRACTS_DIR"/*.contract; do
     echo "--- $(basename "$contract") ---"
+    check_source_presence "$contract"
     check_forbidden_imports "$contract"
     check_aurora_layering "$contract"
     check_forbidden_calls "$contract"

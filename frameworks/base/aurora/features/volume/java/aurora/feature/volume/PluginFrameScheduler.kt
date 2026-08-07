@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package aurora.platform.systemui
+package aurora.feature.volume
 
 import android.os.Looper
 import android.view.Choreographer
@@ -32,7 +32,7 @@ import aurora.sdk.time.FrameScheduler
  * that boundary is IPC by construction.
  *
  * **But the boundary is drawn through the wrong file.** A `Choreographer` adapter is
- * process-agnostic — it binds to whatever `Looper` it is constructed on, which is the whole of its
+ * process-agnostic â€” it binds to whatever `Looper` it is constructed on, which is the whole of its
  * behaviour. ADR-014 put a neutral adapter inside a process-specific layer, and this duplicate is
  * what discovers it.
  *
@@ -64,7 +64,7 @@ internal class PluginFrameScheduler(
      *
      * The `aurora.platform.android` copy asks the display for its refresh rate because it is built
      * in `system_server`, which has no display association. A plugin has a view attached to a real
-     * window and could ask that view — but nothing in this class's contract may accumulate this
+     * window and could ask that view â€” but nothing in this class's contract may accumulate this
      * value, so a nominal figure is honest and a wrong measured one would only look better.
      */
     override val frameIntervalNanos: Long = frameIntervalNanosHint
@@ -82,7 +82,7 @@ internal class PluginFrameScheduler(
      * Cancels one pending callback.
      *
      * `removeFrameCallback` finds nothing for a callback that already ran, so idempotence is all
-     * this needs — and [Disposable] requires that anyway.
+     * this needs â€” and [Disposable] requires that anyway.
      */
     private inner class Cancellation(
         private val posted: Choreographer.FrameCallback,

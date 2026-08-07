@@ -1,0 +1,77 @@
+# aurora.feature.volume - the volume overlay, as a body of code rather than as an artifact.
+#
+# Sprint 10. This contract binds to an android_library, which is the sprint's Question 1: nothing had
+# shown that arch-test.sh can read one. Every module it had read before was a java_library or an
+# android_app.
+#
+# What this file is FOR is the thing a single shared contract could not do: say what VOLUME needs,
+# rather than what the SystemUI plugin APK needs. When Island arrives it gets its own list, and the
+# two lists differing is the measurement. A union would have made android.view. permanently admitted
+# for every feature because one of them once drew a window.
+
+layer:          feature-volume
+module:         AuroraVolumeFeature
+package-root:   aurora.feature.volume
+source-root:    features/volume/java
+
+# The process boundary from ADR-014 still applies and is inherited rather than restated: this code
+# runs inside SystemUI, aurora-platform-android runs inside system_server, and nothing may cross.
+# allow-aurora-import is default-deny, so the absence of aurora.platform.android. below is the
+# enforcement; the forbid-import line names it as well so a reader sees the boundary without knowing
+# the whitelist semantics.
+allow-aurora-import: aurora.sdk.
+allow-aurora-import: aurora.runtime.
+
+forbid-import:  aurora.platform.android.
+forbid-import:  aurora.platform.systemui.
+
+forbid-import:  android.
+forbid-import:  com.android.
+forbid-import:  aurora.device.
+forbid-import:  org.lineageos.
+
+# Exactly what volume's three files import, entry by entry.
+#
+#   android.content.        Context, from Plugin.onCreate
+#   android.graphics.       Canvas, Paint, RectF, Color, PixelFormat, drawable.Drawable
+#   android.media.          AudioManager.STREAM_* - the only names for the int activeStream carries
+#   android.os.             Looper for the frame-source thread guard, Handler for addCallback
+#   android.util.           Log
+#   android.view.           Choreographer, View, WindowManager, Gravity
+allow-import:   android.content.
+allow-import:   android.graphics.
+allow-import:   android.media.
+allow-import:   android.os.
+allow-import:   android.util.
+allow-import:   android.view.
+
+# The plugin API surface, and only that. Nothing under com.android.systemui.volume or
+# com.android.server: reaching into SystemUI's implementation is what the extension point exists to
+# avoid.
+allow-import:   com.android.systemui.plugins.
+
+allow-dep:      aurora-sdk
+allow-dep:      aurora-runtime
+allow-dep:      SystemUIPluginLib
+
+forbid-dep:     aurora-platform-android
+forbid-dep:     aurora-device
+
+# A library is not an app, and the classpath claim is the part of this contract most likely to be
+# unreadable on one. If arch-test.sh cannot verify this line against an android_library, that is
+# Sprint 10's Question 1 answering no, and the mechanism narrows from "library per feature" to
+# "APK per feature".
+expect-classpath: platform_apis
+
+expect-host-supported: no
+
+# PluginFrameScheduler lives here, and it is not volume-specific.
+#
+# It is a near-copy of aurora.platform.android.ChoreographerFrameScheduler, duplicated because the
+# process boundary forbids importing that one - ADR-014 drew a boundary through a file that is
+# actually process-agnostic. The right home is a shared library both Android adapters can depend on.
+#
+# It is NOT extracted yet, on purpose: there is one consumer. Sprint 04.1's rule forbids an
+# abstraction whose only purpose is to make something possible that nothing has asked for, and a
+# shared module for a single caller is exactly that. It moves the day the second feature needs
+# frames - which is the same trigger this sprint's own conclusion runs on.

@@ -1,7 +1,6 @@
 # Sprint 10 — The unit that has a contract
 
-**Status:** **active 2026-08-08** · withdrawn and reinstated the same day, on an input the withdrawal
-did not have
+**Status:** **closed 2026-08-08, 5/5** · written, withdrawn, reinstated and completed the same day
 
 ## Withdrawn, then reinstated — and the reversal is the useful part
 
@@ -215,18 +214,138 @@ and then checks is a restructure whose failure costs the whole tree.
 
 ---
 
+## Tasks 1–3's result, recorded 2026-08-08 — **the gate did not still measure, and now it does**
+
+### The move itself
+
+```
+frameworks/base/aurora/features/volume/     AuroraVolumeFeature   android_library
+    java/aurora/feature/volume/{AuroraVolumeDialog,VolumeIndicatorView,PluginFrameScheduler}.kt
+    res/drawable/*.xml                      contract: feature-volume.contract
+frameworks/base/aurora/platform/systemui/   AuroraSystemUIPlugin  android_app, no srcs
+    AndroidManifest.xml                     contract: platform-systemui.contract
+```
+
+**The APK went from 2 271 450 to 2 271 447 bytes** — a three-byte delta, which is the package name in
+the manifest. Behaviour did not change, which was §9's requirement, and the number is the evidence
+rather than the intention.
+
+The APK's package stays `aurora.platform.systemui` because
+`config_pluginAllowlist` names it and `PluginInstance.kt:301` matches on it. The class moved to
+`aurora.feature.volume`, so the manifest's `<service android:name>` had to become fully qualified — a
+relative `.AuroraVolumeDialog` would have resolved against the APK's package and pointed at nothing.
+
+### Question 1, answered — and the answer is *not by itself*
+
+| half | verdict |
+|---|---|
+| import, layering, allowance-used checks on an `android_library` | **yes, unchanged.** 3 files read, all seven allowances confirmed used, all six forbids clean |
+| `forbid-dep`, `expect-classpath`, `expect-host-supported` | **no — and not because of `android_library`** |
+
+`module_block()` read exactly one file: `$AURORA_DIR/Android.bp`. Any module declared in its own
+`Android.bp` was invisible, and the gate reported `skip: no Soong module named X`, which reads as
+*nothing to check here*.
+
+**`AuroraSystemUIPlugin` had been in that state since Sprint 09.** ADR-014 states the process boundary
+is enforced *"as a build fact as well as an import rule"* — and the build-fact half had never executed
+once. So had this sprint only *moved* code and observed a green run, it would have concluded that the
+gate still measured, from a gate that had never measured that module at all.
+
+Fixed by searching every `Android.bp` under `aurora/`, and by making a **live layer** that names an
+unfindable module a `fail` rather than a `skip` — because that `skip` is precisely how it hid.
+
+### Calibration, and the fifth provocation was wrong before the gate was
+
+Five failure modes provoked against throwaway contract copies, originals byte-compared afterwards:
+
+| provocation | result |
+|---|---|
+| `expect-no-source` declared, a file appears | RED |
+| no `source-root` and no `expect-no-source` | RED — this is the vacuous green that used to pass |
+| `source-root` exists but holds no sources | RED |
+| live layer names a module nothing declares | RED |
+| a feature depends across the process boundary | **GREEN — and my provocation was the bug** |
+
+The fifth changed `forbid-dep` to `allow-dep` *and* added the dependency: it removed the rule and then
+violated the rule it had removed. Redone with the rule intact, it fires. **Third instrument error of
+the day**, after the `pgrep` waiters and `adb screencap`.
+
+### And one gap the calibration found on its own
+
+Testing the fifth properly raised a question nobody had asked: *is `allow-dep` enforced?* It was not.
+A dependency on **no list at all** — `guava` — passed silently, while `contracts/README.md` had
+described `allow-dep` as *"Soong dependencies this module may declare"* since it was written.
+
+Enforced as a whitelist, it failed once, correctly:
+
+```
+FAIL  aurora-platform-android declares dependencies its contract does not permit:
+          aurora-platform
+```
+
+**`platform-android.contract` had omitted `aurora-platform` since Sprint 03**, and the module has
+depended on it the whole time. Nothing ever disagreed with the list, so the list read as complete.
+
+> A rule written down and not checked reads as a rule for exactly as long as nothing disagrees with it.
+
+### Question 2, measured
+
+```
+touch features/volume/java/aurora/feature/volume/VolumeIndicatorView.kt
+m AuroraSystemUIPlugin
+
+  [ 78% 43/55]  //frameworks/base/aurora/features/volume:AuroraVolumeFeature kotlinc
+  #### build completed successfully ####
+```
+
+One library recompiled, then the APK relinked. Nothing else. That is the developer-experience claim
+for C, and it is now a quoted ninja line rather than an expectation.
+
+**Checks: 73 → 92.** The boot-cost measurement stays unrun, because Question 1 did not force C to
+narrow to B and so nobody asked.
+
+### Task 4, and why it is a procedure rather than a second feature
+
+Task 4 was *"only then may a second feature exist"*, proving the pattern repeats. Building a second
+feature to prove that would be a subject created for an assertion — 06C.0's rule, and Sprint 09
+already argued it once over a probe.
+
+What repeats is the **procedure**, and every step below is something Tasks 1–3 actually did:
+
+1. `features/<name>/` with `Android.bp` (`android_library`), a manifest declaring only the R package,
+   `java/aurora/feature/<name>/`, and `res/` if it has any
+2. `contracts/feature-<name>.contract` — `allow-import` starts empty and grows by what the compiler
+   demands, never by copying another feature's list
+3. `static_libs: ["Aurora<Name>Feature"]` on the APK, and `allow-dep` on
+   `platform-systemui.contract` — which is now a whitelist, so forgetting the second is a red gate
+4. a `<service>` in the APK manifest naming `aurora.feature.<name>.<Class>`, fully qualified
+5. if the feature is a plugin with its own package, an entry in
+   `systemui-plugin-allowlist.contract` and the RRO — the composite contract of ADR-015
+
+Step 3's second half is the one this sprint made impossible to forget, and it was not possible to
+forget it before because it was not checked.
+
+---
+
 ## 8. Exit criteria
 
-- [ ] Question 0 answered: the unit that carries a contract is named, and the naming survives a case
-      where artifact and layer disagree
-- [ ] Question 1 answered **by running `arch-test.sh`**, not by reading Soong documentation
-- [ ] Volume's contract lists what Volume demands, and the difference from today's union is recorded
-- [ ] Incremental build locality measured, with the ninja output quoted rather than summarised
-- [ ] Every gate that exists today is still green, and each one was seen red at least once during the
-      move
+- [x] **Question 0 answered:** the contract binds to the Soong module. The case where artifact and
+      layer disagree arrived immediately — `aurora.platform.systemui` is now an artifact with no code
+      and `aurora.feature.volume` is code with no artifact, and each has its own contract
+- [x] **Question 1 answered by running the gate.** Yes for imports and layering on an
+      `android_library`; no for the Soong half until `module_block` was fixed — and that half had
+      never run for `AuroraSystemUIPlugin` either
+- [x] **Volume's contract lists what Volume demands.** Seven allowances, each confirmed used. The
+      difference from a union is not yet observable with one feature, which is honest: the benefit
+      begins at the second, and that is why the sprint's own withdrawal was arguable
+- [x] **Incremental build locality measured**, ninja line quoted
+- [x] **Every gate still green, and each was seen red at least once** — five provocations, one of
+      which was wrong and had to be redone
 
-The last is the one that keeps the others honest: a restructure that leaves every gate green without
-anyone ever seeing one fail has not demonstrated that the gates still point at anything.
+The last is the one that kept the others honest, and it earned itself: it is what turned up a Soong
+check that had never executed and an `allow-dep` list that was never enforced. **A restructure that
+leaves every gate green without anyone seeing one fail has not shown that the gates point at
+anything** — this one would have passed that way.
 
 ---
 

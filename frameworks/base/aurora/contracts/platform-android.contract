@@ -81,6 +81,14 @@ allow-import:   android.os.
 allow-dep:      aurora-runtime
 allow-dep:      services.core
 
+# aurora-platform was missing from this list from Sprint 03 until Sprint 10 Task 3, and the module
+# has depended on it the whole time. Nobody noticed because allow-dep was documentation rather than a
+# whitelist: the gate only checked forbid-dep, so a dependency on no list at all passed silently.
+#
+# Found by enforcement, not by review - which is the point. The list read as complete for seven
+# sprints because nothing ever disagreed with it.
+allow-dep:      aurora-platform
+
 forbid-dep:     aurora-device
 forbid-dep-family: framework
 

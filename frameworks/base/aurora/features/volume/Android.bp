@@ -1,0 +1,34 @@
+// Aurora's volume feature. Sprint 10, Task 1.
+//
+// An android_library rather than an android_app, and that split is the sprint's whole subject:
+// a DEVELOPMENT unit and a DEPLOYMENT unit need not be the same thing. This is where volume's code
+// and volume's contract live; AuroraSystemUIPlugin is the APK that ships it, and one APK can ship
+// several of these.
+//
+// Nothing here changed when it moved out of platform/systemui. Task 1 relocates code without
+// touching behaviour, so that any behaviour change observed during this sprint is a bug.
+
+android_library {
+    name: "AuroraVolumeFeature",
+
+    manifest: "AndroidManifest.xml",
+    srcs: ["java/**/*.kt"],
+    resource_dirs: ["res"],
+
+    // The R class this generates is aurora.feature.volume.R, which is why the library carries its
+    // own manifest declaring that package. The drawables are resolved through pluginContext at
+    // runtime, so they must exist in the APK the plugin is loaded from - static linking puts them
+    // there.
+    use_resource_processor: true,
+
+    static_libs: [
+        "aurora-sdk",
+        "aurora-runtime",
+    ],
+
+    // Provided by SystemUI, not linked. Two copies of VolumeDialog would be two different types to
+    // the ClassLoader that matters.
+    libs: ["SystemUIPluginLib"],
+
+    platform_apis: true,
+}

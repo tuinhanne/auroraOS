@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The AuroraOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License. You may obtain a copy of the
+     License at http://www.apache.org/licenses/LICENSE-2.0
+-->
+
+<!--
+     A library manifest, and it exists for one reason: to name the package the R class lands in.
+
+     It declares NO service and NO permission. Those belong to the APK, because being loadable as a
+     SystemUI plugin is a property of the deployed artifact rather than of this code - the same
+     library linked into a differently-named APK would need a different allowlist entry and a
+     different <service>. Keeping the declaration at the app layer is what lets the feature stay
+     independent of how it ships.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="aurora.feature.volume" />

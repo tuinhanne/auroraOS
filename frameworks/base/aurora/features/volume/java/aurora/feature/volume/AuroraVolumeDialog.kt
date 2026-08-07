@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package aurora.platform.systemui
+package aurora.feature.volume
 
 import android.content.Context
 import android.graphics.PixelFormat
@@ -43,7 +43,7 @@ import com.android.systemui.plugins.annotations.Requirements
  * Sprint 09 Task 2 found that `VolumeDialogComponent` registers AOSP's own dialog as a *default*
  * behind an `ExtensionController` extension point, and that a plugin supplying [VolumeDialog] causes
  * the old dialog to be `destroy()`ed and the new one `init`'d with the same window type. So there is
- * no second overlay to suppress and no upstream patch — the seam is AOSP's own.
+ * no second overlay to suppress and no upstream patch â€” the seam is AOSP's own.
  *
  * ## Where the volume state comes from, and why not from Aurora
  *
@@ -54,7 +54,7 @@ import com.android.systemui.plugins.annotations.Requirements
  * ```
  *
  * SystemUI deliberately hands plugins its volume controller. So this reads state from
- * [VolumeDialogController] rather than from Aurora's own `VolumeService` — which is the honest
+ * [VolumeDialogController] rather than from Aurora's own `VolumeService` â€” which is the honest
  * choice and an uncomfortable finding: **the first shipped Aurora feature does not use the service
  * Sprint 03 booted.** Feeding SystemUI's state through Aurora's service layer would be an
  * abstraction with no consumer, which Sprint 04.1 forbids. What `AuroraSystemService` is *for* is
@@ -197,7 +197,7 @@ class AuroraVolumeDialog : VolumeDialog {
             volume?.notifyVisible(true)
             volume?.getState()
             animate(target = levelNow, fadeTo = 1f)
-            // Wide on arrival, then narrow — and only on arrival. A press while the bar is already
+            // Wide on arrival, then narrow â€” and only on arrival. A press while the bar is already
             // up must not widen it again: the widening is an entrance, not a reaction.
             if (wasHidden) {
                 animateWidth(1f)
@@ -258,9 +258,9 @@ class AuroraVolumeDialog : VolumeDialog {
     /**
      * Replaces whatever is running, from where it is.
      *
-     * `volume-overlay.md` §4 requires that a run of presses leaves the overlay visibly one object:
+     * `volume-overlay.md` Â§4 requires that a run of presses leaves the overlay visibly one object:
      * no replayed entrance, the indicator moving from where it stands, no blink when a press
-     * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant —
+     * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant â€”
      * the continuity is in the `from`, not in a special case.
      */
     private fun animate(target: Float, fadeTo: Float) {
@@ -288,9 +288,9 @@ class AuroraVolumeDialog : VolumeDialog {
      * Width has its own life, and this separation is a bug fix rather than tidiness.
      *
      * The first version passed `widthTo` through [animate] and every state change re-targeted the
-     * width to `widthNow` — "leave it where it is". That reads as harmless and is not: five key
+     * width to `widthNow` â€” "leave it where it is". That reads as harmless and is not: five key
      * presses arrive within a few milliseconds, **before any frame has ticked**, so `widthNow` is
-     * still ≈0 and the entrance's 0→1 gets replaced four times by 0→0. The bar never widened, and
+     * still â‰ˆ0 and the entrance's 0â†’1 gets replaced four times by 0â†’0. The bar never widened, and
      * the code that did it looked like the code that preserved it.
      *
      * *Leave it alone* and *re-target it to its current value* are different instructions. Only one
@@ -312,8 +312,8 @@ class AuroraVolumeDialog : VolumeDialog {
      * The overlay dismisses itself, because nothing else will.
      *
      * The first build assumed [VolumeDialogController.onDismissRequested] would arrive on a timer and
-     * the overlay simply never went away. It does not: the controller sends that for *reasons* —
-     * screen off, a touch outside, an explicit dismissal — and `VolumeDialogImpl` runs its own
+     * the overlay simply never went away. It does not: the controller sends that for *reasons* â€”
+     * screen off, a touch outside, an explicit dismissal â€” and `VolumeDialogImpl` runs its own
      * `Handler` for the idle case. **Owning the surface means owning its lifetime**, which is a
      * consequence of replacing the dialog that Task 2's survey did not surface.
      */
@@ -328,7 +328,7 @@ class AuroraVolumeDialog : VolumeDialog {
         handler.removeCallbacks(dismissRunnable)
         volume?.notifyVisible(false)
         // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
-        // to full opacity first - volume-overlay.md §4's "no blink when a press interrupts a fade".
+        // to full opacity first - volume-overlay.md Â§4's "no blink when a press interrupts a fade".
         animate(target = levelNow, fadeTo = 0f)
     }
 
@@ -443,7 +443,7 @@ class AuroraVolumeDialog : VolumeDialog {
         handler.removeCallbacks(dismissRunnable)
         handler.removeCallbacks(narrowRunnable)
         // Reset to the wide form so the next appearance is an entrance again rather than resuming
-        // wherever the last one stopped. The handle goes with it: a finished 1→0 animation left in
+        // wherever the last one stopped. The handle goes with it: a finished 1â†’0 animation left in
         // place would write 0 back over this on the very next frame, and the reset would look like
         // it had never happened.
         widthNow = 1f
@@ -501,7 +501,7 @@ class AuroraVolumeDialog : VolumeDialog {
          * Below this width fraction the icon is fully gone, not merely faint.
          *
          * A proportional fade leaves a residue at rest, because a spring settles *near* its target
-         * rather than exactly on it — and a barely-visible icon on a 10dp bar reads as dirt.
+         * rather than exactly on it â€” and a barely-visible icon on a 10dp bar reads as dirt.
          */
         const val ICON_GONE_BELOW = 0.35f
     }

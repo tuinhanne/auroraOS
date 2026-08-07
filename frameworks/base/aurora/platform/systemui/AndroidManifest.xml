@@ -56,8 +56,15 @@
              directBootAware because volume keys work before the first unlock, so SystemUI queries
              for this plugin while the user is still locked out.
         -->
+        <!--
+             Fully qualified, and now in a DIFFERENT package from this manifest's own. That is the
+             Sprint 10 split visible in one line: the APK is aurora.platform.systemui because the
+             allowlist entry says so, and the class is aurora.feature.volume.AuroraVolumeDialog
+             because that is where volume's code lives. A relative ".AuroraVolumeDialog" would have
+             silently resolved against the APK's package and pointed at nothing.
+        -->
         <service
-            android:name="aurora.platform.systemui.AuroraVolumeDialog"
+            android:name="aurora.feature.volume.AuroraVolumeDialog"
             android:label="Aurora volume"
             android:directBootAware="true"
             android:exported="true">

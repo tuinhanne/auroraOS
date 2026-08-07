@@ -66,7 +66,7 @@ another entry to that key's list — there is no array syntax.
 | `source-root` | no | Source directory, relative to `frameworks/base/aurora/` |
 | `allow-aurora-import` | yes | `aurora.*` package prefixes this layer may import |
 | `forbid-import` | yes | Import prefixes that must never appear |
-| `allow-dep` | yes | Soong dependencies this module may declare |
+| `allow-dep` | yes | Soong dependencies this module may declare. **A whitelist**: every entry in the module's `static_libs` and `libs` must appear here, or the gate fails |
 | `forbid-dep` | yes | Soong dependencies that must never be declared |
 
 ### Rules
@@ -81,6 +81,22 @@ false failures.
 
 A layer whose `source-root` does not exist is reported as `skip`, not as a failure. A
 layer that has not been built yet is not a violation.
+
+`allow-dep` was documentation until Sprint 10 Task 3 — the table above already called it *"may
+declare"*, but only `forbid-dep` was checked, so a dependency on neither list passed silently. It is
+now enforced, and enforcing it immediately found that `platform-android.contract` had omitted
+`aurora-platform` since Sprint 03. **A rule written down and not checked reads as a rule for as long
+as nothing disagrees with it.**
+
+Two keys govern a module that deliberately holds no source:
+
+| Key | Meaning |
+|---|---|
+| `expect-no-source` | `yes` asserts the `source-root` contains no `.kt` or `.java`. Import checks are then skipped with an accurate reason instead of a misleading one |
+
+Without it, an empty or missing `source-root` is a **failure**, not a pass. Before Sprint 10 an
+omitted `source-root` made every `forbid-import` report `ok` while reading nothing at all, and a
+typo'd one did the same.
 
 ---
 

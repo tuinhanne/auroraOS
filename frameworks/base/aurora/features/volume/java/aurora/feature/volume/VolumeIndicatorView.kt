@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package aurora.platform.systemui
+package aurora.feature.volume
 
 import android.content.Context
 import android.graphics.Canvas
@@ -29,7 +29,7 @@ import android.view.View
  * ## One shape and one number
  *
  * Sprint 09 chose the volume overlay over a notification chip on the criterion *one surface, not a
- * layout system* — a chip carries an icon, a label and probably progress, and would have made the
+ * layout system* â€” a chip carries an icon, a label and probably progress, and would have made the
  * first pixel also the first view hierarchy. So this is a single [View] with `onDraw` and no
  * children: a rounded track, a filled portion, and nothing else.
  *
