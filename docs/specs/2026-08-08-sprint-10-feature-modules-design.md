@@ -1,9 +1,39 @@
 # Sprint 10 — The unit that has a contract
 
-**Status:** **withdrawn 2026-08-08, the day it was written** · kept because the decision inside it
-survives, and because withdrawing it is the more useful record
+**Status:** **active 2026-08-08** · withdrawn and reinstated the same day, on an input the withdrawal
+did not have
 
-## Why this was withdrawn
+## Withdrawn, then reinstated — and the reversal is the useful part
+
+The withdrawal below is left in place rather than deleted. It was sound on its inputs and wrong on
+one of them.
+
+**What it assumed:** that Island, Gesture and Control Panel were *speculation*, which made this sprint
+an abstraction for things nothing had asked for — Sprint 04.1's rule, applied to a sprint.
+
+**What is actually true:** they are *planned*. That is a product decision, not a forecast, and it is
+information the withdrawal did not have. A second feature that will exist is not the same kind of
+object as a second feature that might.
+
+**And a second argument the withdrawal under-weighted, which is the stronger one.** It claimed the
+extraction costs the same today as at the trigger. It does not — *in isolation* it costs the same, but
+at the trigger it does not happen in isolation:
+
+```
+now         move Volume.                          one change, nothing competing
+at trigger  move Volume  +  build Island.         two changes, and a failure in either
+                                                  is attributable to the other
+```
+
+**Two unknowns arriving together** is the shape this project has spent several sprints learning to
+refuse — Sprint 09 §4 names it, and Sprint 09 Task 3 then spent three build cycles on a bug that a
+five-press test had entangled. Doing the extraction while Volume is the only thing in the tree that
+can move is the cheap moment, and it is now.
+
+What survives from the withdrawal unchanged: **Question 1 is still a hypothesis.** Nothing here has
+shown that `arch-test.sh` can read an `android_library`, and if it cannot, C narrows to B.
+
+## The withdrawal, as written
 
 §9 says *"Not design for Island, Gesture or Control Panel. They do not exist."* The sprint is that
 design. Aurora has **one** feature, and every benefit claimed here begins at the second.
@@ -16,20 +46,12 @@ that was verified by eye hours ago.
 Sprint 04.1's rule, applied to a sprint instead of a class: *no abstraction whose only purpose is to
 make something possible that nothing has asked for.*
 
-## What replaces it
+## What it proposed instead — superseded
 
-Not a sprint. A **trigger**:
-
-> **The second SystemUI feature does not begin until Volume has been extracted into its own
-> `android_library` with its own contract, and Question 1 below has been answered by running
-> `arch-test.sh` against it.**
-
-That inverts the cost correctly. The split stops being speculative work and becomes the first task of
-whichever sprint actually needs it — driven by a demand that exists, priced against a benefit that has
-arrived.
-
-Everything below stands as written and is the plan for that day. Question 1 in particular is still
-unanswered and still a hypothesis.
+A trigger rather than a sprint: *the second feature does not begin until Volume is extracted.* That is
+still the right rule, and it is now satisfied by running the sprint rather than by waiting, for the
+reason given above: at the trigger the extraction shares a sprint with a new feature, and here it does
+not.
 
 ---
 
@@ -210,9 +232,15 @@ anyone ever seeing one fail has not demonstrated that the gates still point at a
 
 ## 9. What this sprint must not do
 
-- **Not open until Sprint 09 closes.** Its last exit criterion is a person looking at the first pixel,
-  and moving the tree underneath an unverified feature merges two changes into one.
-- **Not design for Island, Gesture or Control Panel.** They do not exist. Task 4 proves the pattern
-  repeats with a second *shape*, which is a different thing from building the second feature.
+- **Not open until Sprint 09 closes.** Met: Sprint 09 closed 6/6 on 2026-08-08.
+- **Not build Island, Gesture or Control Panel.** They are planned, which is why this sprint runs —
+  but Task 4 proves the *pattern* repeats with a second shape, and that is a different thing from
+  building the second feature. The reinstatement changed why this sprint exists; it did not licence it
+  to grow.
+- **Not fix Volume's feature gaps.** Aurora replaced a dialog that could drag-to-set, mute, expand to
+  other streams and reach DND; Aurora's does none of those, and
+  `onLayoutDirectionChanged` / `onConfigurationChanged` / `onAccessibilityModeChanged` are no-ops.
+  **That is a separate sprint and a real one** — this sprint moves code without changing behaviour, so
+  that any behaviour change during it is a bug rather than a feature.
 - **No abstraction whose only purpose is to make something possible that nothing has asked for.**
   Sprint 04.1's rule, and the most likely way a restructure goes wrong.
