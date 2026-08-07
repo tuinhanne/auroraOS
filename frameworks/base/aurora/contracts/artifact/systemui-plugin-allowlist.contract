@@ -45,19 +45,34 @@ expect-entry:   aurora.platform.systemui
 # fails in that direction deliberately, because auto-accepting would return this contract to the
 # state ADR-015 was written to end.
 
-# Where the subject is found. A path rather than a rule, because the artifact's location is a
-# consequence of the mechanism - and the mechanism is undecided. Sprint 09 measured that
-# PRODUCT_PACKAGE_OVERLAYS lands here; if the mechanism changes, this line changes with it.
-subject-glob:   out/target/product/*/product/overlay/SystemUI__*_rro_product.apk
-also-check:     out/target/product/*/system_ext/priv-app/SystemUI/SystemUI.apk
+# THREE subjects, not one, and the reason is ADR-016.
+#
+# Aurora now owns the artifact that wins - AuroraSystemUIOverlay in system_ext, priority 39. So
+# comparing the winning artifact against this contract compares two files Aurora wrote, and proves
+# only that they match. The gate would go green, stay green, and measure nothing.
+#
+# What still has something to say is upstream. So:
+#
+#   aurora-artifact    what actually wins at runtime. Must equal the expect-entry set.
+#                      This comparison is the tautological one; it is kept because it still catches
+#                      an RRO edited without editing this file.
+#   upstream-artifact  what AOSP and Lineage declare, unioned. THIS is the gate: expect-entry must
+#                      equal upstream plus aurora-owns-entry, exactly. When Lineage adds a plugin,
+#                      upstream grows, the union stops matching, and a human has to decide.
+#
+# Owning the winning artifact costs the ability to use it as evidence about yourself.
+aurora-artifact:    out/target/product/*/system_ext/overlay/AuroraSystemUIOverlay.apk
+upstream-artifact:  out/target/product/*/product/overlay/SystemUI__*_rro_product.apk
+upstream-artifact:  out/target/product/*/system_ext/priv-app/SystemUI/SystemUI.apk
 
-# Known red as of 2026-08-07, and red by execution rather than by assertion - the observer was run
-# against a real build before this line was written. Aurora's entry is absent: Aurora's overlay
-# directory is appended to PRODUCT_PACKAGE_OVERLAYS after Lineage's and loses the merge. The repair
-# is a mechanism decision that waits on one unmeasured number - where system_ext ranks among
-# overlay partitions. This contract is correct and the artifact does not satisfy it, which is what
-# a red gate is for.
-expect-status:  red-until-mechanism-decided
+# The entries that are Aurora's own, and therefore the ones NOT expected to appear upstream.
+# Everything in expect-entry that is not listed here must be found in an upstream artifact.
+aurora-owns-entry:  aurora.platform.systemui
+
+# Was red from 2026-08-07 until ADR-016. It went red by execution rather than by assertion, and the
+# repair waited on one measured number rather than on a preference: Task 3.1 found system_ext at 39,
+# above product's 38, so an Aurora-owned RRO there wins. expect-status is now absent, which means
+# this contract claims to be satisfiable and any red is a real finding.
 
 # Calibrated 2026-08-07, RULE-018. A gate nobody has seen go the other way is a gate nobody has
 # tested, so each verdict was provoked against the real artifact by editing a throwaway copy of

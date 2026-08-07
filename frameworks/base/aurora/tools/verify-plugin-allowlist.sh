@@ -61,57 +61,80 @@ if [ "${AURORA_SKIP_BUILD:-0}" != "1" ]; then
   m SystemUI || die BUILD_FAILED "m SystemUI returned non-zero"
 fi
 
-# ---- locate the subject ---------------------------------------------------
-APK=""
-for pattern in "$(value_of subject-glob "$CONTRACT")" $(values_of also-check "$CONTRACT"); do
-  for candidate in $pattern; do
-    [ -f "$candidate" ] || continue
-    APK="$candidate"
-    break 2
-  done
-done
-[ -n "$APK" ] || die NO_ARTIFACT "no built artifact matched the contract's subject-glob"
-
 AAPT2="$(find out/host -name aapt2 -type f 2>/dev/null | head -1)"
 [ -n "$AAPT2" ] || die NO_TOOL "aapt2 was not found under out/host"
-echo
-echo "subject:  $APK"
 
-# ---- read the array out of the artifact -----------------------------------
 # aapt2 prints the block as:  resource 0x… array/<name>\n  () (array) size=N\n    ["a", "b"]
-"$AAPT2" dump resources "$APK" 2>/dev/null \
-  | awk -v n="array/$ARRAY" '$0 ~ n {f=1; next} f && /^ *resource /{exit} f{print}' \
-  | grep -oE '"[^"]+"' | tr -d '"' | sort -u > "$WORK/actual"
+array_from() {
+  "$AAPT2" dump resources "$1" 2>/dev/null \
+    | awk -v n="array/$ARRAY" '$0 ~ n {f=1; next} f && /^ *resource /{exit} f{print}' \
+    | grep -oE '"[^"]+"' | tr -d '"'
+}
 
-# An empty read is the instrument failing, not the subject. These are different facts and the
-# script must never report the first as the second.
-[ -s "$WORK/actual" ] || die UNREADABLE "$ARRAY was not found in the dump of $(basename "$APK")"
-
-# ---- compare as a set -----------------------------------------------------
+# ---- AURORA: the artifact that actually wins ------------------------------
+AURORA_APK=""
+for candidate in $(value_of aurora-artifact "$CONTRACT"); do
+  [ -f "$candidate" ] && { AURORA_APK="$candidate"; break; }
+done
+[ -n "$AURORA_APK" ] || die NO_ARTIFACT "no built artifact matched aurora-artifact"
 echo
-echo "expected (contract):"; sed 's/^/    /' "$WORK/expected"
-echo "actual   (artifact):"; sed 's/^/    /' "$WORK/actual"
+echo "aurora:   $AURORA_APK"
+array_from "$AURORA_APK" | sort -u > "$WORK/aurora"
+[ -s "$WORK/aurora" ] || die UNREADABLE "$ARRAY not found in $(basename "$AURORA_APK")"
 
-MISSING="$(comm -23 "$WORK/expected" "$WORK/actual")"
-EXTRA="$(comm -13 "$WORK/expected" "$WORK/actual")"
+# ---- UPSTREAM: what AOSP and Lineage declare, unioned ---------------------
+: > "$WORK/upstream"
+FOUND_UPSTREAM=0
+while IFS= read -r pattern; do
+  [ -z "$pattern" ] && continue
+  for candidate in $pattern; do
+    [ -f "$candidate" ] || continue
+    echo "upstream: $candidate"
+    array_from "$candidate" >> "$WORK/upstream"
+    FOUND_UPSTREAM=1
+  done
+done < <(values_of upstream-artifact "$CONTRACT")
+[ "$FOUND_UPSTREAM" -eq 1 ] || die NO_ARTIFACT "no built artifact matched any upstream-artifact"
+sort -u -o "$WORK/upstream" "$WORK/upstream"
+[ -s "$WORK/upstream" ] || die UNREADABLE "$ARRAY not found in any upstream artifact"
 
-if [ -z "$MISSING" ] && [ -z "$EXTRA" ]; then
-  verdict PASS "exact set match"
+values_of aurora-owns-entry "$CONTRACT" | sort -u > "$WORK/ours"
+cat "$WORK/upstream" "$WORK/ours" | sort -u > "$WORK/union"
+
+echo
+echo "declared (contract):"; sed 's/^/    /' "$WORK/expected"
+echo "aurora   (winning artifact):"; sed 's/^/    /' "$WORK/aurora"
+echo "upstream (AOSP + Lineage):"; sed 's/^/    /' "$WORK/upstream"
+echo "aurora's own entries:"; sed 's/^/    /' "$WORK/ours"
+
+RC=0
+
+# 1. The tautological check. Kept because it still catches an RRO edited without the contract.
+if ! diff -q "$WORK/expected" "$WORK/aurora" >/dev/null; then
+  echo
+  echo "MISMATCH  the winning artifact does not match the contract:"
+  comm -23 "$WORK/expected" "$WORK/aurora" | sed 's/^/    declared but absent from the RRO: /'
+  comm -13 "$WORK/expected" "$WORK/aurora" | sed 's/^/    in the RRO but not declared:     /'
+  RC=1
+fi
+
+# 2. The real gate. expect-entry must be exactly upstream plus what Aurora owns.
+if ! diff -q "$WORK/expected" "$WORK/union" >/dev/null; then
+  echo
+  echo "DRIFT  the declared set is not (upstream + aurora's own):"
+  comm -13 "$WORK/expected" "$WORK/union" | sed 's/^/    upstream has it, Aurora does not carry it: /'
+  comm -23 "$WORK/expected" "$WORK/union" | sed 's/^/    Aurora declares it, nobody upstream has:  /'
+  echo
+  echo "  An upstream entry Aurora does not carry means AOSP or Lineage changed the array. Because"
+  echo "  an overlay REPLACES the array, Aurora's RRO would silently drop it. That is a decision,"
+  echo "  not a merge conflict: someone must say whether Aurora carries it forward, and record the"
+  echo "  answer in ${CONTRACT#"$TOP"/}."
+  RC=1
+fi
+
+if [ "$RC" -eq 0 ]; then
+  verdict PASS "the winning artifact matches the contract, and the contract is upstream + aurora's own"
   exit 0
 fi
-
-echo
-[ -n "$MISSING" ] && { echo "missing from the artifact:"; echo "$MISSING" | sed 's/^/    /'; }
-[ -n "$EXTRA"   ] && { echo "present but not declared:";  echo "$EXTRA"   | sed 's/^/    /'; }
-
-# Both directions matter and they mean different things. Losing drops Aurora; winning can drop
-# another project's plugin, which is quieter and worse.
-if [ -n "$EXTRA" ]; then
-  echo
-  echo "  An undeclared entry means AOSP or Lineage changed the array. That is a decision, not a"
-  echo "  merge conflict: someone must say whether Aurora carries it forward, and record it in"
-  echo "  ${CONTRACT#"$TOP"/}."
-fi
-
-verdict FAIL "the artifact does not satisfy the contract"
+verdict FAIL "see the mismatches above"
 exit 1

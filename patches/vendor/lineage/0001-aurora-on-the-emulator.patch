@@ -45,7 +45,7 @@ Three settings, and all of them only say that Aurora exists on this product:
 diff --git a/build/target/product/lineage_sdk_phone_x86_64.mk b/build/target/product/lineage_sdk_phone_x86_64.mk
 --- a/build/target/product/lineage_sdk_phone_x86_64.mk
 +++ b/build/target/product/lineage_sdk_phone_x86_64.mk
-@@ -38,4 +38,22 @@
+@@ -38,4 +38,23 @@
  PRODUCT_SDK_ADDON_COPY_FILES += \
      device/generic/goldfish/data/etc/advancedFeatures.ini:images/x86_64/advancedFeatures.ini \
      device/generic/goldfish/data/etc/encryptionkey.img:images/x86_64/encryptionkey.img \
@@ -63,8 +63,9 @@ diff --git a/build/target/product/lineage_sdk_phone_x86_64.mk b/build/target/pro
 +PRODUCT_PACKAGE_OVERLAYS += \
 +    frameworks/base/aurora/overlay
 +
-+# Sprint 09 Task 3.1, TEMPORARY - remove with frameworks/base/aurora/tools/probe-system-ext.
-+# An instrument, not a feature: it installs one throwaway RRO into /system_ext/overlay so the
-+# runtime can be asked where that partition ranks. Nothing reads it and nothing depends on it.
++# ADR-016. Aurora's SystemUI resource overlay, as a real RRO in system_ext rather than a directory
++# in PRODUCT_PACKAGE_OVERLAYS - because config_pluginAllowlist is contested and the directory
++# route loses it to vendor/lineage. Task 3.1 measured the ranks: vendor 0-4, product 5-38,
++# system_ext 39.
 +PRODUCT_PACKAGES += \
-+    AuroraPartitionProbe
++    AuroraSystemUIOverlay

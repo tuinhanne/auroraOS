@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The AuroraOS Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="aurora.rro.systemui">
+
+    <application android:hasCode="false" />
+
+    <!--
+         android:priority is present because the schema wants it and is NOT what makes this
+         overlay win. Task 3.0b measured that OverlayManager discards the manifest value and
+         derives mPriority from the partition: the auto-generated product RRO declares 1 and
+         receives 32, the vendor one declares 0 and receives 4. Task 3.1 then measured that an
+         overlay in system_ext receives 39 while declaring 1.
+
+         So the number below is documentation, not mechanism. Changing it changes nothing.
+         Moving this module out of system_ext would change everything.
+    -->
+    <overlay
+        android:targetPackage="com.android.systemui"
+        android:isStatic="true"
+        android:priority="1" />
+
+</manifest>

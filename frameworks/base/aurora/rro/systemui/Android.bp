@@ -1,0 +1,27 @@
+// Aurora's resource overlay for SystemUI. ADR-016.
+//
+// Not in frameworks/base/aurora/overlay/ on purpose: that path is a PRODUCT_PACKAGE_OVERLAYS root
+// and the build scans it for <root>/<resource-dir> matches, so a Soong module inside it would be
+// two things at once.
+//
+// Why an RRO here and a plain overlay directory there: the directory overlay is sufficient when
+// Aurora is the only party writing a resource, and it loses when it is not, because
+// PRODUCT_PACKAGE_OVERLAYS merges by directory order and Aurora is appended last. Measured both
+// ways - config_deviceSpecificSystemServices wins from the overlay directory and has been booting
+// Aurora since Sprint 03; config_pluginAllowlist lost to vendor/lineage. Contest is the test.
+
+runtime_resource_overlay {
+    name: "AuroraSystemUIOverlay",
+
+    // The reason this works at all. Task 3.1 measured the ranks on a real boot:
+    // vendor 0-4, product 5-38, system_ext 39. Lineage's overlay reaches the product RRO,
+    // so anything below 39 loses.
+    system_ext_specific: true,
+
+    // SystemUI's plugin permission is protectionLevel="signature", and the auto-generated RROs
+    // are signed the same way. Keeping the key identical means signature is never a variable when
+    // this overlay is being debugged.
+    certificate: "platform",
+
+    sdk_version: "current",
+}
