@@ -299,6 +299,14 @@ has to be written now rather than when a `user` build first fails.
   it sits relative to `aurora.platform.android` is a real fork (a fourth-layer sibling, or a fifth
   thing that is not a layer at all), and ADR-012's rule says the answer is settled by the build
   graph. **Task 3 opens with that decision and it is ADR-shaped.** It is not made here.
+
+  > **Settled by ADR-014**, written before Task 3 rather than during it: a fifth layer,
+  > `aurora.platform.systemui`, in the Aurora tree. The deciding fact was not the Android dependency
+  > but the **process** — the plugin runs in SystemUI, `aurora-platform-android` runs in
+  > `system_server`, and omitting `aurora.platform.android.` from the new contract's
+  > `allow-aurora-import` turns that boundary into a gate. ADR-014 also names two consequences this
+  > section did not see: the frame source belongs in the plugin, and `AuroraSystemService` may have no
+  > consumer.
 - **A second overlay directory.** `frameworks/base/aurora/overlay` currently holds only
   `core/res/res/values/config.xml`. The allowlist entry needs
   `.../packages/SystemUI/res/values/config.xml` beside it — Aurora's own overlay root, so no patch.
@@ -362,7 +370,10 @@ together* is the shape this project has spent several sprints learning to avoid.
    examined seriously. Record what lost and why.
 2. **Task 2 — the surface.** Answer Question 1 by survey, the way Sprint 03 Task 2 answered where
    the runtime belongs: look for what already exists before proposing anything.
-3. **Task 3 — the first pixel.** Whatever Question 2 decided, static or animated.
+3. **Task 3 — the first pixel.** Whatever Question 2 decided, static or animated. Opens on ADR-014's
+   module, and its **first step is a measurement, not code**: build and read `config_pluginAllowlist`
+   out of the produced SystemUI resources, because two overlay roots define it and which one wins has
+   not been measured.
 4. **Task 4 — look at it.** The only sprint so far whose exit criterion is a person watching a
    screen. Boot PASS was checkable from a log; this is not.
 
