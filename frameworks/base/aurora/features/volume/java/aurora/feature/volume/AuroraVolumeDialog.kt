@@ -255,7 +255,7 @@ class AuroraVolumeDialog : VolumeDialog {
             // the icon fades out below 35% width, which is where the bar spends most of its life.
             val wasMuted = mutedNow
             mutedNow = s.muted
-            view?.muted = mutedNow
+            applyMuteToView()
             if (mutedNow != wasMuted) {
                 if (mutedNow) {
                     handler.removeCallbacks(narrowRunnable)
@@ -340,6 +340,22 @@ class AuroraVolumeDialog : VolumeDialog {
      * Touches outside the window fall through to whatever is behind, which `FLAG_NOT_TOUCH_MODAL`
      * already arranged - the overlay is a control now, but only where it is drawn.
      */
+    /**
+     * The muted styling is suppressed for as long as a finger is down.
+     *
+     * Dragging to the bottom sets the level to zero, and Android mutes a stream that reaches zero.
+     * So a drag passing through the bottom made the bar switch to its outlined muted form
+     * mid-gesture and switch back on the way up - a shape change the person did not ask for, caused
+     * by their own drag. Reported as a border appearing while dragging quickly.
+     *
+     * While a finger is down the finger owns the display. The state is still tracked in [mutedNow]
+     * and applied the moment the drag ends, so nothing is lost - only deferred until it is the
+     * device's statement rather than an artefact of the gesture.
+     */
+    private fun applyMuteToView() {
+        view?.muted = mutedNow && !dragging
+    }
+
     private fun onTouch(event: MotionEvent): Boolean {
         val v = view ?: return false
         when (event.actionMasked) {
@@ -351,6 +367,7 @@ class AuroraVolumeDialog : VolumeDialog {
                 // write its value over the finger's on the next tick.
                 levelHandle = null
                 volume?.userActivity()
+                applyMuteToView()
                 animateWidth(1f)
                 applyDrag(v, event.y)
             }
@@ -360,6 +377,7 @@ class AuroraVolumeDialog : VolumeDialog {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
+                applyMuteToView()
                 scheduleNarrow()
                 scheduleDismiss()
             }
@@ -816,9 +834,16 @@ class AuroraVolumeDialog : VolumeDialog {
          *
          * Damping 1 rather than the default 0.85: a volume bar that overshoots is briefly showing a
          * loudness the device is not at, which is a different statement from a card that bounces.
+         *
+         * 3600 rather than the 1400 tried first, and the number came from arithmetic against the
+         * input rate rather than from taste. Holding a volume key auto-repeats at roughly 20 events
+         * a second, so a step arrives every ~50ms; a critically damped spring settles in about
+         * `9/sqrt(stiffness)` seconds, which is 240ms at 1400 and 150ms at 3600. Anything slower than
+         * the repeat interval means the bar is still travelling toward one step when the next lands,
+         * and it falls further behind for as long as the key is held.
          */
         @JvmField
-        val LEVEL_SPRING = Spring(stiffness = 1400f, dampingRatio = 1f)
+        val LEVEL_SPRING = Spring(stiffness = 3600f, dampingRatio = 1f)
 
         /**
          * Below this width fraction the icon is fully gone, not merely faint.

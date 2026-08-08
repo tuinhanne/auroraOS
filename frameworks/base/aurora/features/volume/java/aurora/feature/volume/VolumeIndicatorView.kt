@@ -183,7 +183,21 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         canvas.save()
         canvas.clipPath(clip)
 
-        val fillTop = bottom - (th * level).coerceAtLeast(0f)
+        val filled = (th * level).coerceAtLeast(0f)
+        val fillTop = bottom - filled
+
+        // Nothing at all below a pixel, rather than a very short shape.
+        //
+        // A zero-height rounded rect does not vanish: Canvas clamps the corner radius to half the
+        // height and draws a degenerate lens, and the muted outline's inset then inverts the rect
+        // entirely. Both left a bright smudge at the bottom of an empty bar - reported as "a bit of
+        // fill left over at zero volume". Empty must look empty.
+        if (filled < 1f) {
+            canvas.restore()
+            drawIcon(canvas, left, tw, bottom, fillTop)
+            return
+        }
+
         rect.set(left, fillTop, right, bottom)
 
         if (muted) {
