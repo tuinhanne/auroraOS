@@ -125,6 +125,9 @@ class AuroraVolumeDialog : VolumeDialog {
      */
     private var lastTickNanos: Long = 0
 
+    /** Diagnostics for the two reports timestamps can settle. */
+    private var lastStateAt: Long = 0L
+
     /** When the current fade began, for the log that measures it. 0 when no fade is running. */
     private var dismissStartedAt: Long = 0L
     private var framePending: Boolean = false
@@ -149,6 +152,9 @@ class AuroraVolumeDialog : VolumeDialog {
 
     /** Mirrors the active stream's mute state, so a change in it can be told from a repeat of it. */
     private var mutedNow: Boolean = false
+
+    /** The raw level last rendered, so a repeated state can be told from a new one. */
+    private var lastLevelRaw: Int = -1
 
     /** 0 = no slash, 1 = fully struck through. Animated so muting reads as a stroke being drawn. */
     private var slashNow: Float = 0f
@@ -254,6 +260,22 @@ class AuroraVolumeDialog : VolumeDialog {
             val stream = state.activeStream
             if (stream == VolumeDialogController.State.NO_ACTIVE_STREAM) return
             val s = state.states.get(stream) ?: return
+            // Duplicates are dropped before anything is animated.
+            //
+            // VolumeDialogController pushes a burst of three or four state changes for one volume
+            // step - measured on a device as +678ms, +1ms, +1ms, +3ms, with only the last carrying a
+            // new level. Each one used to cancel two springs and start two more, so a single key
+            // press did four times the work it needed to, on the main thread. That is where a held
+            // key's stutter was coming from.
+            //
+            // Compared on the three things this overlay actually renders. Anything else in the state
+            // is not its business, so a change to it is not a reason to re-animate.
+            if (stream == activeStream && s.level == lastLevelRaw && s.muted == mutedNow) {
+                if (DIAG) Log.d(TAG, "state ignored: identical")
+                return
+            }
+            lastLevelRaw = s.level
+
             activeStream = stream
             levelMin = s.levelMin
             levelMax = s.levelMax
@@ -277,10 +299,17 @@ class AuroraVolumeDialog : VolumeDialog {
                 applyMuteToView()
                 if (mutedNow) {
                     handler.removeCallbacks(narrowRunnable)
-                    if (!dragging) animateWidth(1f)
+                    animateWidth(1f)
                 } else if (shown && !dragging) {
                     scheduleNarrow()
                 }
+            }
+
+            if (DIAG) {
+                val t = SystemClock.uptimeMillis()
+                Log.d(TAG, "state +${t - lastStateAt}ms level=${s.level}/${s.levelMax} " +
+                    "muted=${s.muted} dragging=$dragging shown=$shown frames=$frameIndex")
+                lastStateAt = t
             }
 
             if (dragging) {
@@ -386,7 +415,11 @@ class AuroraVolumeDialog : VolumeDialog {
     }
 
     private fun applyMuteToView() {
-        animateSlash(if (mutedNow && !dragging) 1f else 0f)
+        // No !dragging here any more. The suppression existed to stop the outlined muted fill
+        // appearing in the middle of a drag; the outline was withdrawn, and a rule kept after its
+        // reason is gone is just a bug waiting to be reported - which it was: the slash only
+        // appeared after lifting the finger.
+        animateSlash(if (mutedNow) 1f else 0f)
     }
 
     private fun onTouch(event: MotionEvent): Boolean {
@@ -454,6 +487,9 @@ class AuroraVolumeDialog : VolumeDialog {
         val span = levelMax - levelMin
         if (activeStream >= 0 && span > 0) {
             val userLevel = levelMin + Math.round(fraction * span)
+            // Kept in step with what the finger just set, so the echo of this call is recognised
+            // as a duplicate rather than treated as news.
+            lastLevelRaw = userLevel
             // sync=false: let the audio system settle asynchronously. The bar is already where the
             // finger is, so waiting for confirmation would only add latency to a value we set.
             volume?.setStreamVolume(activeStream, userLevel, false)
@@ -614,7 +650,7 @@ class AuroraVolumeDialog : VolumeDialog {
         handler.removeCallbacks(dismissRunnable)
         // The controller can ask for a dismissal at any time, including while a finger is on the
         // bar. Refusing it here rather than only cancelling the timer covers that path too.
-        if (dragging) return
+        if (dragging) { if (DIAG) Log.d(TAG, "dismiss refused: finger down"); return }
         // Two lines per dismissal, kept rather than removed. Four separate attempts to time this
         // fade from outside the process failed - a tight dumpsys poll perturbed the main thread it
         // was measuring, a sparse one lacked resolution, screencap costs most of a second per frame,
@@ -622,7 +658,7 @@ class AuroraVolumeDialog : VolumeDialog {
         // argument for AuroraSystemService: a thing that runs silently cannot be told from a thing
         // that never ran.
         dismissStartedAt = SystemClock.uptimeMillis()
-        Log.d(TAG, "dismiss: fading from alpha=$alphaNow")
+        Log.d(TAG, "dismiss: fading from alpha=$alphaNow width=$widthNow shown=$shown")
         volume?.notifyVisible(false)
         // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
         // to full opacity first - volume-overlay.md section 4's "no blink when a press interrupts a fade".
@@ -805,6 +841,9 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private companion object {
         const val TAG = "AuroraVolume"
+
+        /** Temporary, and removed once the held-key and second-fade reports are settled. */
+        const val DIAG = true
 
         /**
          * The resting shape: a slim vertical bar, the size the overlay had before the wide entrance

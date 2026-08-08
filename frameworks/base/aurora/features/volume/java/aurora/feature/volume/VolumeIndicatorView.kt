@@ -250,10 +250,24 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
 
         // Top-left to bottom-right, and it grows rather than appearing - muting reads as a stroke
         // being drawn rather than as one icon being swapped for another.
-        val x0 = cx - h * 1.05f
-        val y0 = cy - h * 1.05f
-        val x1 = cx + h * 1.05f
-        val y1 = cy + h * 1.05f
+        //
+        // Sized to the GLYPH, not to a fixed multiple of h. At 1.05h in both axes the diagonal came
+        // out about three times the cone's width, so it overhung far past the speaker and read as
+        // off-centre even though it was centred - reported from a device as a crooked slash. The
+        // cone is 1h wide after the centring shift and 1.7h tall, so the slash is bounded by that
+        // and only overhangs a little, which is what a strike-through is supposed to do.
+        //
+        // And nudged left of the cone's geometric centre. The speaker's mass is not where its
+        // bounding box says it is: the body and the box sit on the left while the right side is the
+        // open mouth of the cone, which is mostly empty. A slash centred on the box therefore reads
+        // as sitting slightly right of the thing it crosses.
+        val sx = h * 0.62f
+        val sy = h * 0.90f
+        val mx = cx - h * SLASH_NUDGE
+        val x0 = mx - sx
+        val y0 = cy - sy
+        val x1 = mx + sx
+        val y1 = cy + sy
         iconStroke.strokeWidth = 2.2f * density
         canvas.drawLine(x0, y0, x0 + (x1 - x0) * slash01, y0 + (y1 - y0) * slash01, iconStroke)
     }
@@ -273,6 +287,9 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
     private companion object {
         /** How much of the speaker's half-height becomes corner radius. */
         const val CORNER_SOFTNESS = 0.22f
+
+        /** How far left of centre the slash sits, as a fraction of the icon's half-size. */
+        const val SLASH_NUDGE = 0.16f
 
         /** Icon size as a fraction of the track width, leaving a visible margin inside the pill. */
         const val ICON_FRACTION = 0.55f
