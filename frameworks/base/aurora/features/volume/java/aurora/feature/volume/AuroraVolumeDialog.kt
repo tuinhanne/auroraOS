@@ -111,6 +111,15 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private var frameIndex: Long = 0
     private var lastFrameNanos: Long = 0
+
+    /**
+     * The largest frame time already handed to the controller.
+     *
+     * Separate from [lastFrameNanos], which is reset when the window hides so the next appearance
+     * starts a fresh delta. This one must NOT reset: the controller's timeline outlives the window,
+     * and handing it an older stamp after a hide/show cycle is the same violation.
+     */
+    private var lastTickNanos: Long = 0
     private var framePending: Boolean = false
     private var animationSeq: Int = 0
 
@@ -525,9 +534,40 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private fun onFrame(nanos: Long) {
         framePending = false
-        val delta = if (lastFrameNanos == 0L) 0L else (nanos - lastFrameNanos).coerceAtLeast(0L)
-        lastFrameNanos = nanos
-        controller.tick(FrameTime(nanos, delta, frameIndex++))
+
+        // Monotonic guard, and it is not defensive programming - it is this adapter's job.
+        //
+        // Aurora's runtime enforces RULE-006: a timeline may not be advanced backwards, and
+        // ExecutionTimeline throws rather than silently reordering. Animations here are created
+        // OUTSIDE a frame - in a key callback, a touch event or a timer - so their timeline starts
+        // from a clock reading, while Choreographer.frameTimeNanos is the time the frame BEGAN.
+        // Those differ by microseconds, and the first frame after a handle is created can carry a
+        // stamp a few microseconds earlier than the handle's own start.
+        //
+        // Measured on a device: 94596033776 after 94596039329, backwards by 5.5us, and it killed
+        // SystemUI. The runtime was right to refuse it; supplying a monotonic stream is the caller's
+        // responsibility, which is exactly what the exception message says.
+        val t = if (nanos < lastTickNanos) lastTickNanos else nanos
+        val delta = if (lastFrameNanos == 0L) 0L else (t - lastFrameNanos).coerceAtLeast(0L)
+        lastFrameNanos = t
+        lastTickNanos = t
+
+        // A throw here reaches Choreographer, then the main Looper, and takes SystemUI down with the
+        // whole system UI. PluginActionManager contains crashes that happen inside plugin API calls
+        // by disabling the plugin; a frame callback is outside that containment, so Aurora provides
+        // its own - the shape AOSP uses for config_deviceSpecificSystemServices, where a failure
+        // degrades instead of bootlooping.
+        //
+        // It must never be the reason a bug goes unnoticed, so it logs the whole exception and takes
+        // the overlay down rather than continuing in an unknown state.
+        try {
+            controller.tick(FrameTime(t, delta, frameIndex++))
+        } catch (e: Throwable) {
+            Log.e(TAG, "frame failed; taking the overlay down rather than SystemUI", e)
+            hideWindow()
+            controller.stop()
+            return
+        }
 
         // levelHandle is null while dragging, but the guard is explicit as well: a state change that
         // arrives between ACTION_DOWN and the next frame could have started one.
@@ -571,6 +611,9 @@ class AuroraVolumeDialog : VolumeDialog {
         if (shown) return
         val wm = windowManager ?: return
         val v = view ?: return
+        // The frame loop's failure path stops the controller. Without this, one transient fault would
+        // leave the volume overlay dead until SystemUI restarts - a recovery worse than the fault.
+        if (!controller.isRunning) controller.start()
         val density = v.resources.displayMetrics.density
         slimWPx = SLIM_W_DP * density
         wideWPx = WIDE_W_DP * density
