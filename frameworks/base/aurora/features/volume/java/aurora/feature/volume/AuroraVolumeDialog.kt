@@ -20,6 +20,7 @@ import android.graphics.PixelFormat
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -29,6 +30,7 @@ import aurora.runtime.animation.DefaultAnimationController
 import aurora.sdk.animation.Animation
 import aurora.sdk.animation.AnimationHandle
 import aurora.sdk.animation.SpringSpec
+import aurora.sdk.design.Spring
 import aurora.sdk.time.FrameTime
 import com.android.systemui.plugins.PluginDependency
 import com.android.systemui.plugins.VolumeDialog
@@ -44,7 +46,7 @@ import com.android.systemui.plugins.annotations.Requirements
  * Sprint 09 Task 2 found that `VolumeDialogComponent` registers AOSP's own dialog as a *default*
  * behind an `ExtensionController` extension point, and that a plugin supplying [VolumeDialog] causes
  * the old dialog to be `destroy()`ed and the new one `init`'d with the same window type. So there is
- * no second overlay to suppress and no upstream patch â€” the seam is AOSP's own.
+ * no second overlay to suppress and no upstream patch  -  the seam is AOSP's own.
  *
  * ## Where the volume state comes from, and why not from Aurora
  *
@@ -55,7 +57,7 @@ import com.android.systemui.plugins.annotations.Requirements
  * ```
  *
  * SystemUI deliberately hands plugins its volume controller. So this reads state from
- * [VolumeDialogController] rather than from Aurora's own `VolumeService` â€” which is the honest
+ * [VolumeDialogController] rather than from Aurora's own `VolumeService`  -  which is the honest
  * choice and an uncomfortable finding: **the first shipped Aurora feature does not use the service
  * Sprint 03 booted.** Feeding SystemUI's state through Aurora's service layer would be an
  * abstraction with no consumer, which Sprint 04.1 forbids. What `AuroraSystemService` is *for* is
@@ -120,6 +122,9 @@ class AuroraVolumeDialog : VolumeDialog {
      * and handing it an older stamp after a hide/show cycle is the same violation.
      */
     private var lastTickNanos: Long = 0
+
+    /** When the current fade began, for the log that measures it. 0 when no fade is running. */
+    private var dismissStartedAt: Long = 0L
     private var framePending: Boolean = false
     private var animationSeq: Int = 0
 
@@ -222,7 +227,7 @@ class AuroraVolumeDialog : VolumeDialog {
             volume?.notifyVisible(true)
             volume?.getState()
             animate(target = levelNow, fadeTo = 1f)
-            // Wide on arrival, then narrow â€” and only on arrival. A press while the bar is already
+            // Wide on arrival, then narrow  -  and only on arrival. A press while the bar is already
             // up must not widen it again: the widening is an entrance, not a reaction.
             if (wasHidden) {
                 animateWidth(1f)
@@ -246,7 +251,7 @@ class AuroraVolumeDialog : VolumeDialog {
 
             // Mute is a state, so the indicator for it has to be one that persists. The bar's wide
             // form is where indicators live, so a muted bar stays wide instead of narrowing away from
-            // the only thing saying it is silent. §6, and the reason it is not simply an icon swap:
+            // the only thing saying it is silent. section 6, and the reason it is not simply an icon swap:
             // the icon fades out below 35% width, which is where the bar spends most of its life.
             val wasMuted = mutedNow
             mutedNow = s.muted
@@ -264,7 +269,16 @@ class AuroraVolumeDialog : VolumeDialog {
             // here as a state change, and re-animating toward it would put a spring between the finger
             // and the bar - which is exactly the lag a direct control must not have.
             if (dragging) {
-                if (shown) scheduleDismiss()
+                // Deliberately does NOT arm the dismiss timer.
+                //
+                // It used to. Every setStreamVolume during a drag returns here, so the timer was
+                // re-armed while the finger was still down - and a finger that then held still for
+                // 1.5s got the overlay fading underneath it. Releasing afterwards looked like the
+                // bar vanishing instantly, because it had already been fading for a while.
+                //
+                // ACTION_DOWN cancels the timer and ACTION_UP arms it. Nothing between them should:
+                // a finger on the bar is an interaction for as long as it is there, however still
+                // it is.
                 return
             }
 
@@ -311,7 +325,7 @@ class AuroraVolumeDialog : VolumeDialog {
     /**
      * The finger sets the level directly.
      *
-     * `volume-overlay.md` §9 deferred touch as *"a second feature and a different set of questions"*.
+     * `volume-overlay.md` section 9 deferred touch as *"a second feature and a different set of questions"*.
      * Four of those questions are answered here, and each answer is a decision rather than a default:
      *
      * - **The width goes wide, as on a first press.** Requested behaviour: a touch is the start of an
@@ -320,7 +334,7 @@ class AuroraVolumeDialog : VolumeDialog {
      *   is lag, and lag in a direct control reads as the phone being slow rather than as motion.
      * - **The dismiss delay stops, rather than restarting.** A finger held still for three seconds is
      *   still an interaction; a restarting timer would take the overlay away underneath it.
-     * - **Out of range clamps**, and the overlay stays up. §7's reason applies to a drag as much as to
+     * - **Out of range clamps**, and the overlay stays up. section 7's reason applies to a drag as much as to
      *   a press: no feedback at all is indistinguishable from failure.
      *
      * Touches outside the window fall through to whatever is behind, which `FLAG_NOT_TOUCH_MODAL`
@@ -361,7 +375,7 @@ class AuroraVolumeDialog : VolumeDialog {
      * The first version read `v.trackHeightPx`, which is animating: `ACTION_DOWN` calls
      * `animateWidth(1f)` and then this, before any frame has run, so the first sample used the slim
      * height and every later sample used a taller one. The same finger position meant a different
-     * level at different moments of one gesture — measured as a one-step discrepancy against a
+     * level at different moments of one gesture  measured as a one-step discrepancy against a
      * computed target.
      *
      * A drag always forces the wide form, so the wide form is the honest coordinate space for it.
@@ -396,9 +410,9 @@ class AuroraVolumeDialog : VolumeDialog {
     /**
      * Replaces whatever is running, from where it is.
      *
-     * `volume-overlay.md` Â§4 requires that a run of presses leaves the overlay visibly one object:
+     * `volume-overlay.md` section 4 requires that a run of presses leaves the overlay visibly one object:
      * no replayed entrance, the indicator moving from where it stands, no blink when a press
-     * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant â€”
+     * interrupts a fade. That is why `from` is [levelNow] and [alphaNow] rather than a constant  - 
      * the continuity is in the `from`, not in a special case.
      */
     private fun animate(target: Float, fadeTo: Float) {
@@ -409,12 +423,22 @@ class AuroraVolumeDialog : VolumeDialog {
         // true forever, so the branch that removes the window once the fade completes never ran.
         // Assigned directly ONLY when there is no animation. Assigning first and animating too would
         // jump to the target on the frame before the spring's first sample, which is exactly the
-        // discontinuity §4 forbids.
+        // discontinuity section 4 forbids.
         val lh = springOrNull("aurora.volume.level.$seq", levelNow, target)
         if (lh == null) levelNow = target
         levelHandle = lh
 
-        val fh = springOrNull("aurora.volume.fade.$seq", alphaNow, fadeTo)
+        // Leaving is slower than arriving, and that asymmetry is the spec's rather than a preference.
+        //
+        // volume-overlay.md section 3: it *leaves by fading rather than vanishing, so peripheral vision
+        // registers it as leaving rather than as having blinked* - and section 3 also says it *appears on
+        // the change, not after it*. An entrance that took as long as an exit would be a delay to
+        // confirm intent, which that section explicitly refuses.
+        //
+        // Critically damped, unlike the default: alpha overshooting below zero would be clipped by
+        // the view anyway, so the overshoot would only make the fade look like it stopped early.
+        val fadeSpec = if (fadeTo < alphaNow) SpringSpec(spring = FADE_OUT_SPRING) else SpringSpec()
+        val fh = springOrNull("aurora.volume.fade.$seq", alphaNow, fadeTo, fadeSpec)
         if (fh == null) alphaNow = fadeTo
         fadeHandle = fh
 
@@ -426,10 +450,15 @@ class AuroraVolumeDialog : VolumeDialog {
     }
 
     /** A spring, or `null` when there is nothing to travel. See [AT_REST]. */
-    private fun springOrNull(name: String, from: Float, to: Float): AnimationHandle? {
+    private fun springOrNull(
+        name: String,
+        from: Float,
+        to: Float,
+        spec: SpringSpec = SpringSpec(),
+    ): AnimationHandle? {
         if (kotlin.math.abs(to - from) < AT_REST) return null
         return controller.animator.play(
-            Animation(name = name, spec = SpringSpec(), from = from, to = to)
+            Animation(name = name, spec = spec, from = from, to = to)
         )
     }
 
@@ -437,9 +466,9 @@ class AuroraVolumeDialog : VolumeDialog {
      * Width has its own life, and this separation is a bug fix rather than tidiness.
      *
      * The first version passed `widthTo` through [animate] and every state change re-targeted the
-     * width to `widthNow` â€” "leave it where it is". That reads as harmless and is not: five key
+     * width to `widthNow`  -  "leave it where it is". That reads as harmless and is not: five key
      * presses arrive within a few milliseconds, **before any frame has ticked**, so `widthNow` is
-     * still â‰ˆ0 and the entrance's 0â†’1 gets replaced four times by 0â†’0. The bar never widened, and
+     * still 0 and the entrance's 0 -> 1 gets replaced four times by 0 -> 0. The bar never widened, and
      * the code that did it looked like the code that preserved it.
      *
      * *Leave it alone* and *re-target it to its current value* are different instructions. Only one
@@ -477,8 +506,8 @@ class AuroraVolumeDialog : VolumeDialog {
      * The overlay dismisses itself, because nothing else will.
      *
      * The first build assumed [VolumeDialogController.onDismissRequested] would arrive on a timer and
-     * the overlay simply never went away. It does not: the controller sends that for *reasons* â€”
-     * screen off, a touch outside, an explicit dismissal â€” and `VolumeDialogImpl` runs its own
+     * the overlay simply never went away. It does not: the controller sends that for *reasons*  - 
+     * screen off, a touch outside, an explicit dismissal  -  and `VolumeDialogImpl` runs its own
      * `Handler` for the idle case. **Owning the surface means owning its lifetime**, which is a
      * consequence of replacing the dialog that Task 2's survey did not surface.
      */
@@ -491,9 +520,20 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private fun beginDismiss() {
         handler.removeCallbacks(dismissRunnable)
+        // The controller can ask for a dismissal at any time, including while a finger is on the
+        // bar. Refusing it here rather than only cancelling the timer covers that path too.
+        if (dragging) return
+        // Two lines per dismissal, kept rather than removed. Four separate attempts to time this
+        // fade from outside the process failed - a tight dumpsys poll perturbed the main thread it
+        // was measuring, a sparse one lacked resolution, screencap costs most of a second per frame,
+        // and a shell clock silently produced negative durations. Sprint 03 Task 4.4b made the same
+        // argument for AuroraSystemService: a thing that runs silently cannot be told from a thing
+        // that never ran.
+        dismissStartedAt = SystemClock.uptimeMillis()
+        Log.d(TAG, "dismiss: fading from alpha=$alphaNow")
         volume?.notifyVisible(false)
         // Fades from where it is, not from 1. A dismissal that interrupts an entrance must not jump
-        // to full opacity first - volume-overlay.md Â§4's "no blink when a press interrupts a fade".
+        // to full opacity first - volume-overlay.md section 4's "no blink when a press interrupts a fade".
         animate(target = levelNow, fadeTo = 0f)
     }
 
@@ -654,7 +694,7 @@ class AuroraVolumeDialog : VolumeDialog {
         // stay true and the next appearance would refuse to animate its level.
         dragging = false
         // Reset to the wide form so the next appearance is an entrance again rather than resuming
-        // wherever the last one stopped. The handle goes with it: a finished 1â†’0 animation left in
+        // wherever the last one stopped. The handle goes with it: a finished 1 -> 0 animation left in
         // place would write 0 back over this on the very next frame, and the reset would look like
         // it had never happened.
         widthNow = 1f
@@ -664,6 +704,16 @@ class AuroraVolumeDialog : VolumeDialog {
         val v = view ?: return
         runCatching { wm.removeViewImmediate(v) }
             .onFailure { Log.e(TAG, "removeView failed", it) }
+        if (dismissStartedAt != 0L) {
+            Log.d(
+                TAG,
+                "hidden ${SystemClock.uptimeMillis() - dismissStartedAt} ms after the fade began, " +
+                    "alpha=$alphaNow frames=$frameIndex",
+            )
+            dismissStartedAt = 0L
+        } else {
+            Log.d(TAG, "hidden without a fade having started, alpha=$alphaNow")
+        }
         shown = false
         lastFrameNanos = 0
         volume?.notifyVisible(false)
@@ -726,10 +776,23 @@ class AuroraVolumeDialog : VolumeDialog {
         const val FADED_OUT = 0.01f
 
         /**
+         * The spring the overlay leaves on. Slower than it arrives on, deliberately.
+         *
+         * Stiffness 110 against the default 400, so the settle is roughly 0.9 s rather than 0.6 s,
+         * and critically damped so it does not overshoot into the clamp and appear to stop early.
+         *
+         * A number felt on a device, which is the only way `volume-overlay.md` section 3 allows one to be
+         * chosen: *exact durations are not fixed here the kind of number that has to be felt on a
+         * device.* The first value was measured at 595 ms and read as too quick.
+         */
+        @JvmField
+        val FADE_OUT_SPRING = Spring(stiffness = 110f, dampingRatio = 1f)
+
+        /**
          * Below this width fraction the icon is fully gone, not merely faint.
          *
          * A proportional fade leaves a residue at rest, because a spring settles *near* its target
-         * rather than exactly on it â€” and a barely-visible icon on a 10dp bar reads as dirt.
+         * rather than exactly on it  -  and a barely-visible icon on a 10dp bar reads as dirt.
          */
         const val ICON_GONE_BELOW = 0.35f
     }
