@@ -33,11 +33,20 @@ forbid-import:  org.lineageos.
 # Exactly what volume's three files import, entry by entry.
 #
 #   android.content.        Context, from Plugin.onCreate
-#   android.graphics.       Canvas, Paint, RectF, Color, PixelFormat, drawable.Drawable
-#   android.media.          AudioManager.STREAM_* - the only names for the int activeStream carries
-#   android.os.             Looper for the frame-source thread guard, Handler for addCallback
+#   android.graphics.       Canvas, Paint, Path, RectF, Color, PixelFormat
+#   android.os.             Looper for the frame-source thread guard, Handler, SystemClock
 #   android.util.           Log
-#   android.view.           Choreographer, View, WindowManager, Gravity
+#   android.view.           Choreographer, View, WindowManager, Gravity, MotionEvent
+#
+#   android.media.          AudioManager.STREAM_* - the only names for the int activeStream carries
+#
+# android.media. was removed for one build and put back. It went when media's icon became a drawn
+# speaker and the per-stream drawables looked redundant; it returned immediately, because dropping
+# them cost the ability to tell WHICH stream is being changed - volume-overlay.md section 5, and the
+# reason a person adjusting the ringer when they meant media should not find out later.
+#
+# Recorded rather than quietly reinstated: the allowance is only correct while something reads those
+# constants, and `check_allow_import_is_used` is what makes that true rather than remembered.
 allow-import:   android.content.
 allow-import:   android.graphics.
 allow-import:   android.media.

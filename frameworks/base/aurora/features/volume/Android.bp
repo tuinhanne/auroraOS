@@ -15,10 +15,13 @@ android_library {
     srcs: ["java/**/*.kt"],
     resource_dirs: ["res"],
 
+    // Three drawables, not four. Ring, alarm and call stay as vectors because each is one fixed
+    // glyph; media became a speaker drawn from primitives because its wave count is a function of
+    // the level, and a drawable would need one asset per state.
+    //
     // The R class this generates is aurora.feature.volume.R, which is why the library carries its
-    // own manifest declaring that package. The drawables are resolved through pluginContext at
-    // runtime, so they must exist in the APK the plugin is loaded from - static linking puts them
-    // there.
+    // own manifest naming that package. The drawables are resolved through pluginContext at runtime,
+    // so they must exist in the APK the plugin is loaded from - static linking puts them there.
     use_resource_processor: true,
 
     static_libs: [

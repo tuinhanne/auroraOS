@@ -16,8 +16,9 @@
 package aurora.feature.volume
 
 import android.content.Context
-import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.media.AudioManager
+import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -97,8 +98,9 @@ class AuroraVolumeDialog : VolumeDialog {
     private var levelHandle: AnimationHandle? = null
     private var fadeHandle: AnimationHandle? = null
     private var widthHandle: AnimationHandle? = null
+    private var slashHandle: AnimationHandle? = null
 
-    /** Where the plugin's own resources live. Not [sysuiContext] - that resolves SystemUI's. */
+    /** Where the plugin's own drawables live. Not [sysuiContext] - that resolves SystemUI's. */
     private var pluginContext: Context? = null
 
     /**
@@ -147,6 +149,9 @@ class AuroraVolumeDialog : VolumeDialog {
 
     /** Mirrors the active stream's mute state, so a change in it can be told from a repeat of it. */
     private var mutedNow: Boolean = false
+
+    /** 0 = no slash, 1 = fully struck through. Animated so muting reads as a stroke being drawn. */
+    private var slashNow: Float = 0f
 
     private val handler: Handler = Handler(Looper.getMainLooper())
 
@@ -352,8 +357,26 @@ class AuroraVolumeDialog : VolumeDialog {
      * and applied the moment the drag ends, so nothing is lost - only deferred until it is the
      * device's statement rather than an artefact of the gesture.
      */
+    /**
+     * The glyph for a stream, or `null` for media.
+     *
+     * Null means *draw the speaker*, whose waves follow the level. Ring, alarm and call are fixed
+     * pictures and stay as drawables. section 5 wants a change of subject to be legible, and one
+     * speaker for every stream would have made a ringer adjustment look exactly like a media one.
+     */
+    private fun iconFor(stream: Int): Drawable? {
+        val ctx = pluginContext ?: return null
+        val id = when (stream) {
+            AudioManager.STREAM_RING, AudioManager.STREAM_NOTIFICATION -> R.drawable.ic_aurora_ring
+            AudioManager.STREAM_ALARM -> R.drawable.ic_aurora_alarm
+            AudioManager.STREAM_VOICE_CALL -> R.drawable.ic_aurora_call
+            else -> return null
+        }
+        return ctx.getDrawable(id)
+    }
+
     private fun applyMuteToView() {
-        view?.muted = mutedNow && !dragging
+        animateSlash(if (mutedNow && !dragging) 1f else 0f)
     }
 
     private fun onTouch(event: MotionEvent): Boolean {
@@ -378,7 +401,11 @@ class AuroraVolumeDialog : VolumeDialog {
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 dragging = false
                 applyMuteToView()
-                scheduleNarrow()
+                // Narrow on a real lift only. ACTION_CANCEL means the finger left the window
+                // while still adjusting - the touch was taken away, not given up - and shrinking
+                // then pulls the bar out from under a gesture in progress. The dismiss timer
+                // still runs in both cases, so nothing is left wide forever.
+                if (event.actionMasked == MotionEvent.ACTION_UP) scheduleNarrow()
                 scheduleDismiss()
             }
             else -> return false
@@ -509,6 +536,25 @@ class AuroraVolumeDialog : VolumeDialog {
      * *Leave it alone* and *re-target it to its current value* are different instructions. Only one
      * of them survives a value that has not been sampled yet.
      */
+    /**
+     * Drives the mute slash.
+     *
+     * A fourth animated property, on the same controller and the same frame as the other three.
+     * Snappy rather than gentle: a slash that eases in slowly reads as the icon being uncertain
+     * about whether the stream is muted.
+     */
+    private fun animateSlash(to: Float) {
+        slashHandle = springOrNull(
+            slashHandle, "aurora.volume.slash.${++animationSeq}", slashNow, to,
+            SpringSpec(spring = SLASH_SPRING),
+        )
+        if (slashHandle == null) {
+            slashNow = to
+            view?.slash01 = to
+        }
+        requestFrame()
+    }
+
     private fun animateWidth(to: Float) {
         // A spring with no displacement is at rest, not running - so do not start one.
         //
@@ -589,17 +635,6 @@ class AuroraVolumeDialog : VolumeDialog {
 
     private val narrowRunnable = Runnable { if (!mutedNow) animateWidth(0f) }
 
-    /** Which stream is being changed, as a picture. Falls back to media rather than to nothing. */
-    private fun iconFor(stream: Int): android.graphics.drawable.Drawable? {
-        val ctx = pluginContext ?: return null
-        val id = when (stream) {
-            AudioManager.STREAM_RING, AudioManager.STREAM_NOTIFICATION -> R.drawable.ic_aurora_ring
-            AudioManager.STREAM_ALARM -> R.drawable.ic_aurora_alarm
-            AudioManager.STREAM_VOICE_CALL -> R.drawable.ic_aurora_call
-            else -> R.drawable.ic_aurora_media
-        }
-        return ctx.getDrawable(id)
-    }
 
     private fun requestFrame() {
         if (framePending) return
@@ -652,6 +687,7 @@ class AuroraVolumeDialog : VolumeDialog {
             fadeHandle?.let { alphaNow = it.value }
         }
         widthHandle?.let { widthNow = it.value }
+        slashHandle?.let { slashNow = it.value }
 
         view?.let {
             it.level = levelNow
@@ -662,13 +698,15 @@ class AuroraVolumeDialog : VolumeDialog {
             // narrow to hold it. A plain proportional fade left a faint mark at rest, because a
             // spring settles near its target rather than exactly on it - so this reaches zero at
             // ICON_GONE_BELOW and stays there.
+            it.slash01 = slashNow
             it.iconAlpha01 =
                 ((widthNow - ICON_GONE_BELOW) / (1f - ICON_GONE_BELOW)).coerceIn(0f, 1f)
         }
 
         val running = (levelHandle?.isRunning == true) ||
             (fadeHandle?.isRunning == true) ||
-            (widthHandle?.isRunning == true)
+            (widthHandle?.isRunning == true) ||
+            (slashHandle?.isRunning == true)
         if (running) {
             requestFrame()
         } else if (dragging) {
@@ -700,7 +738,7 @@ class AuroraVolumeDialog : VolumeDialog {
         val lp = WindowManager.LayoutParams(
             // The window is always the WIDE size, in both directions. Shrinking happens inside it,
             // so no layout pass and no surface resize lands on the animation's critical path.
-            (WIDE_W_DP * density).toInt(),
+            (WINDOW_W_DP * density).toInt(),
             (WIDE_H_DP * density).toInt(),
             windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -771,6 +809,19 @@ class AuroraVolumeDialog : VolumeDialog {
          */
         const val WIDE_W_DP = 34f
         const val WIDE_H_DP = 210f
+
+        /**
+         * The window is wider than anything drawn in it, and that margin is touch slack.
+         *
+         * A drag is vertical, but fingers wander sideways, and leaving the window mid-gesture
+         * arrives as ACTION_CANCEL - the touch is taken away rather than given up. Reported from
+         * a device as the bar shrinking while still being adjusted.
+         *
+         * The track stays right-aligned inside it, so nothing moves on screen; the extra width is
+         * invisible and only exists to catch the finger. It does swallow touches in a 72dp strip
+         * at the edge - for the two-and-a-half seconds the overlay is up, which is the trade.
+         */
+        const val WINDOW_W_DP = 72f
 
         /**
          * Distance from the screen edge, and it belongs to the WINDOW rather than to either shape.
@@ -844,6 +895,10 @@ class AuroraVolumeDialog : VolumeDialog {
          */
         @JvmField
         val LEVEL_SPRING = Spring(stiffness = 3600f, dampingRatio = 1f)
+
+        /** The mute slash. Quick and critically damped: a state change, not a flourish. */
+        @JvmField
+        val SLASH_SPRING = Spring(stiffness = 900f, dampingRatio = 1f)
 
         /**
          * Below this width fraction the icon is fully gone, not merely faint.

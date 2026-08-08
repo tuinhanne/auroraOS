@@ -21,7 +21,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.drawable.Drawable
 import android.view.View
 
 /**
@@ -30,13 +29,12 @@ import android.view.View
  * ## One shape and one number
  *
  * Sprint 09 chose the volume overlay over a notification chip on the criterion *one surface, not a
- * layout system* â€” a chip carries an icon, a label and probably progress, and would have made the
- * first pixel also the first view hierarchy. So this is a single [View] with `onDraw` and no
- * children: a rounded track, a filled portion, and nothing else.
+ * layout system*. So this is a single [View] with `onDraw` and no children: a rounded track, a
+ * filled portion, and a speaker drawn from primitives.
  *
- * It has no opinion about volume. [level] and [alpha01] are set from outside, every frame, by
- * whatever is driving the animation. A view that read `AudioManager` itself would be a second source
- * of truth for a number SystemUI already owns.
+ * It has no opinion about volume. Every field is set from outside, per frame, by whatever is driving
+ * the animation. A view that read `AudioManager` itself would be a second source of truth for a
+ * number SystemUI already owns.
  */
 internal class VolumeIndicatorView(context: Context) : View(context) {
 
@@ -44,123 +42,84 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
     var level: Float = 0f
         set(value) {
             val clamped = value.coerceIn(0f, 1f)
-            if (clamped != field) {
-                field = clamped
-                invalidate()
-            }
+            if (clamped != field) { field = clamped; invalidate() }
         }
 
     /** 0..1, the whole indicator's opacity. Separate from [level] so entrance and value can differ. */
     var alpha01: Float = 1f
         set(value) {
             val clamped = value.coerceIn(0f, 1f)
-            if (clamped != field) {
-                field = clamped
-                invalidate()
-            }
+            if (clamped != field) { field = clamped; invalidate() }
         }
 
-    /**
-     * Track width in pixels, animated between slim and wide.
-     *
-     * The window is a constant width and this narrows inside it, rather than the window resizing.
-     * A `WindowManager.updateViewLayout` per frame would put a layout pass and a surface resize on
-     * the animation's critical path for a shape that could simply be drawn smaller.
-     */
+    /** Track width in pixels, animated between slim and wide. */
     var trackWidthPx: Float = 0f
-        set(value) {
-            if (value != field) {
-                field = value
-                invalidate()
-            }
-        }
+        set(value) { if (value != field) { field = value; invalidate() } }
 
-    /**
-     * Track height in pixels, animated with the width.
-     *
-     * The wide form is taller as well as fatter, so the entrance reads as one gesture rather than a
-     * bar that got fatter. The window is sized for the tall form and this shrinks inside it.
-     */
+    /** Track height in pixels, animated with the width. */
     var trackHeightPx: Float = 0f
-        set(value) {
-            if (value != field) {
-                field = value
-                invalidate()
-            }
-        }
+        set(value) { if (value != field) { field = value; invalidate() } }
 
-    /** Shown while the track is wide, gone once it narrows. Owned by the caller. */
-    var icon: Drawable? = null
-        set(value) {
-            if (value !== field) {
-                field = value
-                invalidate()
-            }
-        }
-
-    /** 0..1, separate from [alpha01] so the icon can leave before the bar does. */
+    /** 0..1, how much of the icon is shown. It belongs to the wide form and leaves before it. */
     var iconAlpha01: Float = 0f
         set(value) {
             val clamped = value.coerceIn(0f, 1f)
-            if (clamped != field) {
-                field = clamped
-                invalidate()
-            }
+            if (clamped != field) { field = clamped; invalidate() }
         }
 
     /**
-     * Whether the stream is muted, which is a **state** and not a level of zero.
+     * 0..1, how far the mute slash is drawn across the speaker.
      *
-     * `volume-overlay.md` §6: *the overlay must distinguish silent because it is at the bottom from
-     * silent because it is muted, because the recovery is different: one is a press away, the other
-     * is not.* Two things change when this is set — the fill becomes an outline, and the icon is
-     * struck through — and neither of them is the level, because §6 also requires that muting
-     * **preserves** the level and that the preserved level stays visible.
+     * Animated rather than toggled, because muting is a state change a person performs and watching
+     * the line arrive is what makes it read as *their* action rather than as the icon being swapped
+     * for a different icon. At 0 there is no slash at all, so it costs nothing when unmuted.
      */
-    var muted: Boolean = false
+    var slash01: Float = 0f
         set(value) {
-            if (value != field) {
-                field = value
-                invalidate()
-            }
+            val clamped = value.coerceIn(0f, 1f)
+            if (clamped != field) { field = clamped; invalidate() }
         }
 
-    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    /**
+     * The glyph for streams that are not media, or `null` for media.
+     *
+     * `volume-overlay.md` section 5 requires that a change of *subject* be legible, not just a change
+     * of number - adjusting the ringer when you meant media is a mistake people make constantly. So
+     * ring, alarm and call keep their own drawables. Media has none, and is drawn as a speaker whose
+     * waves follow the level, which no fixed asset could do.
+     */
+    var icon: android.graphics.drawable.Drawable? = null
+        set(value) { if (value !== field) { field = value; invalidate() } }
 
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
-    /** The muted fill's outline, and the slash across the icon. Width set once from density. */
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val iconFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val iconStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 2f * context.resources.displayMetrics.density
         strokeCap = Paint.Cap.ROUND
     }
 
     private val rect = RectF()
+    private val arcRect = RectF()
 
-    /** The track's outline, reused every frame so onDraw allocates nothing. */
+    /** The track's outline and the speaker's body. Reused so onDraw allocates nothing. */
     private val clip = Path()
+    private val cone = Path()
+
+    private val density = context.resources.displayMetrics.density
 
     override fun onDraw(canvas: Canvas) {
         val tw = trackWidthPx
         val th = trackHeightPx
         if (tw <= 0f || th <= 0f) return
 
-        // RIGHT-ALIGNED, not centred. The window sits a fixed margin from the screen edge and the
-        // track's right edge sits on the window's, so widening extends inward and the gap at the
-        // edge never changes. Centring inside the wide window made the bar appear to slide away
-        // from the edge as it grew, which reads as the whole thing moving rather than growing.
+        // Right-aligned: the window sits a fixed margin from the screen edge and the track's right
+        // edge sits on the window's, so widening extends inward and the gap never changes.
         val right = width.toFloat()
         val left = right - tw
-
-        // Vertically centred, so the taller wide form grows from the middle in both directions.
         val top = (height - th) / 2f
         val bottom = top + th
-
         val radius = tw / 2f
         val a = (alpha01 * 255f).toInt().coerceIn(0, 255)
 
@@ -168,110 +127,114 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         trackPaint.color = Color.argb((a * 0.35f).toInt().coerceIn(0, 255), 255, 255, 255)
         canvas.drawRoundRect(rect, radius, radius, trackPaint)
 
-        // Fill: grows upward from the bottom, because that is the direction a volume level means.
-        //
-        // CLIPPED to the track's shape rather than rounded on its own. Drawing it as its own rounded
-        // rect looked identical at most levels and was wrong at low ones: Canvas clamps a corner
-        // radius to half the rect's height, so a short fill got LESS rounded corners than the track
-        // and its squarer bottom poked out past the track's curve. Reported from a device as the fill
-        // spilling outside the bar.
-        //
-        // Clipping states the actual rule - the fill is the track, filled in - so it cannot disagree
-        // with the track's outline at any height, including heights nobody tested.
-        clip.rewind()
-        clip.addRoundRect(rect, radius, radius, Path.Direction.CW)
-        canvas.save()
-        canvas.clipPath(clip)
-
+        // Fill: grows upward from the bottom, and is clipped to the track rather than rounded on its
+        // own. Canvas clamps a corner radius to half the rect height, so a short fill drawn as its
+        // own rounded rect gets squarer corners than the track and pokes out past its curve.
         val filled = (th * level).coerceAtLeast(0f)
-        val fillTop = bottom - filled
-
-        // Nothing at all below a pixel, rather than a very short shape.
-        //
-        // A zero-height rounded rect does not vanish: Canvas clamps the corner radius to half the
-        // height and draws a degenerate lens, and the muted outline's inset then inverts the rect
-        // entirely. Both left a bright smudge at the bottom of an empty bar - reported as "a bit of
-        // fill left over at zero volume". Empty must look empty.
-        if (filled < 1f) {
-            canvas.restore()
-            drawIcon(canvas, left, tw, bottom, fillTop)
-            return
-        }
-
-        rect.set(left, fillTop, right, bottom)
-
-        if (muted) {
-            // Outlined rather than solid. A solid column at the preserved level would read as
-            // "sounding at this loudness", which is the one thing it is not. The outline says the
-            // level is still there and nothing is coming out of it.
-            //
-            // Legible because a muted bar never narrows - AuroraVolumeDialog holds it wide for
-            // exactly this reason. A 2dp stroke inside a 10dp bar would be mush.
-            //
-            // ROUNDED, and the first version was not. A square-cornered stroke inside a rounded clip
-            // has its corners cut away, leaving straight stubs that read as stray border lines
-            // sitting outside the bar. Reported from a device after dragging past the bottom, which
-            // is where it shows: dragging to zero makes Android mute the stream, so the outline
-            // appears exactly when a person is least expecting a new shape.
-            val inset = strokePaint.strokeWidth / 2f
-            fillPaint.color = Color.argb((a * 0.18f).toInt().coerceIn(0, 255), 255, 255, 255)
-            canvas.drawRoundRect(rect, radius, radius, fillPaint)
-            rect.inset(inset, inset)
-            val r = (radius - inset).coerceAtLeast(0f)
-            strokePaint.color = Color.argb(a, 255, 255, 255)
-            canvas.drawRoundRect(rect, r, r, strokePaint)
-        } else {
+        if (filled >= 1f) {
+            clip.rewind()
+            clip.addRoundRect(rect, radius, radius, Path.Direction.CW)
+            canvas.save()
+            canvas.clipPath(clip)
+            rect.set(left, bottom - filled, right, bottom)
             fillPaint.color = Color.argb(a, 255, 255, 255)
             canvas.drawRect(rect, fillPaint)
+            canvas.restore()
         }
+        // Below a pixel nothing is drawn at all: a zero-height rounded rect does not vanish, it
+        // becomes a degenerate lens, and an empty bar kept a bright smudge at the bottom.
 
-        canvas.restore()
-
-        drawIcon(canvas, left, tw, bottom, fillTop)
+        drawSpeaker(canvas, left, tw, bottom, bottom - filled, a)
     }
 
     /**
-     * The stream icon, near the bottom of the track.
+     * A speaker, with as many waves as the level deserves.
      *
-     * Its colour is decided by what is behind it rather than fixed: white on the dim track, dark on
-     * the white fill. A single colour would vanish at one end of the range - which is the kind of
-     * thing that only shows up when someone actually turns the volume down.
+     * Drawn from primitives rather than loaded as a vector, because the wave count is a function of
+     * the level and a drawable would need one asset per state. Three arcs, revealed in turn, and
+     * none at all at silence - so the icon says roughly what the bar says, and still says it when
+     * the bar is too short to read at a glance.
      */
-    private fun drawIcon(canvas: Canvas, left: Float, tw: Float, bottom: Float, fillTop: Float) {
-        val d = icon ?: return
+    private fun drawSpeaker(
+        canvas: Canvas,
+        left: Float,
+        tw: Float,
+        bottom: Float,
+        fillTop: Float,
+        a: Int,
+    ) {
         val ia = (iconAlpha01 * alpha01 * 255f).toInt().coerceIn(0, 255)
         if (ia == 0) return
 
-        val size = (tw * ICON_FRACTION)
+        val s = tw * ICON_FRACTION
+        val h = s / 2f
         val cx = left + tw / 2f
-        val cy = bottom - tw / 2f - (tw - size) / 2f
-        val half = size / 2f
+        val cy = bottom - tw / 2f - (tw - s) / 2f
 
-        // A muted fill is an outline, so the icon sits over the track's dimness rather than over
-        // white - reading the contrast off the fill boundary would pick the wrong colour.
-        val tint = if (!muted && cy > fillTop) ON_FILL else ON_TRACK
+        // Dark over the white fill, white over the dim track. A fixed colour vanishes at one end of
+        // the range, which only shows up when someone actually turns the volume down.
+        val tint = if (cy > fillTop) ON_FILL else ON_TRACK
+        iconFill.color = tint
+        iconFill.alpha = ia
+        iconStroke.color = tint
+        iconStroke.alpha = ia
+        iconStroke.strokeWidth = 1.6f * density
 
-        d.setBounds(
-            (cx - half).toInt(),
-            (cy - half).toInt(),
-            (cx + half).toInt(),
-            (cy + half).toInt(),
-        )
-        d.setTint(tint)
-        d.alpha = ia
-        d.draw(canvas)
+        val d = icon
+        if (d != null) {
+            // A stream with its own glyph: ring, alarm or call. No waves - those belong to the
+            // speaker, and a bell with sound waves would be inventing a symbol nobody knows.
+            d.setBounds(
+                (cx - h).toInt(), (cy - h).toInt(), (cx + h).toInt(), (cy + h).toInt(),
+            )
+            d.setTint(tint)
+            d.alpha = ia
+            d.draw(canvas)
+        } else {
+            // Body: a small box on the left opening into a cone on the right.
+            cone.rewind()
+            cone.moveTo(cx - h * 0.95f, cy - h * 0.30f)
+            cone.lineTo(cx - h * 0.45f, cy - h * 0.30f)
+            cone.lineTo(cx + h * 0.05f, cy - h * 0.85f)
+            cone.lineTo(cx + h * 0.05f, cy + h * 0.85f)
+            cone.lineTo(cx - h * 0.45f, cy + h * 0.30f)
+            cone.lineTo(cx - h * 0.95f, cy + h * 0.30f)
+            cone.close()
+            canvas.drawPath(cone, iconFill)
 
-        if (!muted) return
+            // Waves, and the slash replaces them rather than crossing them.
+            //
+            // A slash drawn over three arcs is two symbols competing in one glyph, and the arcs win
+            // on ink. Silence has no waves anyway, so hiding them while the slash arrives is also
+            // the honest picture: nothing is coming out of the speaker.
+            //
+            // Thresholds rather than a continuous count, because an arc that fades in over one
+            // volume step reads as a rendering artefact rather than as a third wave arriving.
+            if (slash01 < 0.5f) {
+                val waves = when {
+                    level <= 0.02f -> 0
+                    level < 0.40f -> 1
+                    level < 0.75f -> 2
+                    else -> 3
+                }
+                for (i in 0 until waves) {
+                    val r = h * (0.45f + 0.30f * i)
+                    arcRect.set(cx + h * 0.05f - r, cy - r, cx + h * 0.05f + r, cy + r)
+                    canvas.drawArc(arcRect, -50f, 100f, false, iconStroke)
+                }
+            }
+        }
 
-        // Struck through, rather than replaced by a generic "volume off" glyph.
-        //
-        // §1 wants two facts from this one slot - WHICH stream, and whether it is muted - and a
-        // muted-speaker icon answers the second by discarding the first. A slash keeps the stream's
-        // own glyph, needs no new drawable per stream, and is the one "off" mark nobody has to learn.
-        strokePaint.color = tint
-        strokePaint.alpha = ia
-        val r = half * 0.95f
-        canvas.drawLine(cx - r, cy + r, cx + r, cy - r, strokePaint)
+        if (slash01 <= 0f) return
+
+        // Top-left to bottom-right, and it grows rather than appearing - muting reads as a stroke
+        // being drawn rather than as one icon being swapped for another.
+        val x0 = cx - h * 1.05f
+        val y0 = cy - h * 1.05f
+        val x1 = cx + h * 1.05f
+        val y1 = cy + h * 1.05f
+        iconStroke.strokeWidth = 2.2f * density
+        canvas.drawLine(x0, y0, x0 + (x1 - x0) * slash01, y0 + (y1 - y0) * slash01, iconStroke)
     }
 
     private companion object {
