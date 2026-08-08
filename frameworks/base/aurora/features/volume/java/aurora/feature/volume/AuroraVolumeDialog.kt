@@ -424,7 +424,14 @@ class AuroraVolumeDialog : VolumeDialog {
         // Assigned directly ONLY when there is no animation. Assigning first and animating too would
         // jump to the target on the frame before the spring's first sample, which is exactly the
         // discontinuity section 4 forbids.
-        val lh = springOrNull("aurora.volume.level.$seq", levelNow, target)
+        // LEVEL_SPRING rather than the gentle default. The level answers "did my press register",
+        // and a spring that takes 400ms to arrive is still travelling when the next press lands, so
+        // a run of presses shows a bar permanently behind the keys. Critically damped, because a
+        // volume bar that overshoots is showing a loudness the device is not at.
+        val lh = springOrNull(
+            levelHandle, "aurora.volume.level.$seq", levelNow, target,
+            SpringSpec(spring = LEVEL_SPRING),
+        )
         if (lh == null) levelNow = target
         levelHandle = lh
 
@@ -438,7 +445,7 @@ class AuroraVolumeDialog : VolumeDialog {
         // Critically damped, unlike the default: alpha overshooting below zero would be clipped by
         // the view anyway, so the overshoot would only make the fade look like it stopped early.
         val fadeSpec = if (fadeTo < alphaNow) SpringSpec(spring = FADE_OUT_SPRING) else SpringSpec()
-        val fh = springOrNull("aurora.volume.fade.$seq", alphaNow, fadeTo, fadeSpec)
+        val fh = springOrNull(fadeHandle, "aurora.volume.fade.$seq", alphaNow, fadeTo, fadeSpec)
         if (fh == null) alphaNow = fadeTo
         fadeHandle = fh
 
@@ -449,13 +456,23 @@ class AuroraVolumeDialog : VolumeDialog {
         requestFrame()
     }
 
-    /** A spring, or `null` when there is nothing to travel. See [AT_REST]. */
+    /**
+     * Cancels [previous], then returns a fresh spring - or `null` when there is nothing to travel.
+     *
+     * **The cancellation is the point.** Every press replaced the handle without cancelling the one
+     * it replaced, so each one stayed in the registry and kept being ticked. A run of presses left
+     * dozens of finished animations behind, every frame ticked all of them, and the bar visibly
+     * lagged behind the keys - worse the longer the run, which is exactly the case
+     * `volume-overlay.md` §4 calls the normal one rather than an edge case.
+     */
     private fun springOrNull(
+        previous: AnimationHandle?,
         name: String,
         from: Float,
         to: Float,
         spec: SpringSpec = SpringSpec(),
     ): AnimationHandle? {
+        previous?.cancel()
         if (kotlin.math.abs(to - from) < AT_REST) return null
         return controller.animator.play(
             Animation(name = name, spec = spec, from = from, to = to)
@@ -486,6 +503,7 @@ class AuroraVolumeDialog : VolumeDialog {
         // Reported from a device as "it just hides instead of animating away", and the evidence for
         // the cause was already sitting in a log from three hours earlier: handle=1.0/true, on every
         // frame.
+        widthHandle?.cancel()
         if (kotlin.math.abs(to - widthNow) < AT_REST) {
             widthNow = to
             widthHandle = null
@@ -787,6 +805,20 @@ class AuroraVolumeDialog : VolumeDialog {
          */
         @JvmField
         val FADE_OUT_SPRING = Spring(stiffness = 110f, dampingRatio = 1f)
+
+        /**
+         * The spring the level travels on. Much stiffer than the default, and critically damped.
+         *
+         * The level's job is answering *did my press register* - the first of the three questions
+         * `volume-overlay.md` section 1 lists, and the reason the overlay exists at all. A gentle
+         * spring is still arriving when the next press lands, so a run of presses leaves the bar
+         * permanently behind the keys.
+         *
+         * Damping 1 rather than the default 0.85: a volume bar that overshoots is briefly showing a
+         * loudness the device is not at, which is a different statement from a card that bounces.
+         */
+        @JvmField
+        val LEVEL_SPRING = Spring(stiffness = 1400f, dampingRatio = 1f)
 
         /**
          * Below this width fraction the icon is fully gone, not merely faint.

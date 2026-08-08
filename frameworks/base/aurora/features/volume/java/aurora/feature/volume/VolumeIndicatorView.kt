@@ -193,12 +193,19 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             //
             // Legible because a muted bar never narrows - AuroraVolumeDialog holds it wide for
             // exactly this reason. A 2dp stroke inside a 10dp bar would be mush.
+            //
+            // ROUNDED, and the first version was not. A square-cornered stroke inside a rounded clip
+            // has its corners cut away, leaving straight stubs that read as stray border lines
+            // sitting outside the bar. Reported from a device after dragging past the bottom, which
+            // is where it shows: dragging to zero makes Android mute the stream, so the outline
+            // appears exactly when a person is least expecting a new shape.
             val inset = strokePaint.strokeWidth / 2f
             fillPaint.color = Color.argb((a * 0.18f).toInt().coerceIn(0, 255), 255, 255, 255)
-            canvas.drawRect(rect, fillPaint)
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
             rect.inset(inset, inset)
+            val r = (radius - inset).coerceAtLeast(0f)
             strokePaint.color = Color.argb(a, 255, 255, 255)
-            canvas.drawRect(rect, strokePaint)
+            canvas.drawRoundRect(rect, r, r, strokePaint)
         } else {
             fillPaint.color = Color.argb(a, 255, 255, 255)
             canvas.drawRect(rect, fillPaint)
