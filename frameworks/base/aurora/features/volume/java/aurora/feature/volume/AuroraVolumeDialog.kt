@@ -229,8 +229,13 @@ class AuroraVolumeDialog : VolumeDialog {
         override fun onShowRequested(reason: Int, keyguardLocked: Boolean, lockTaskModeState: Int) {
             val wasHidden = !shown
             showWindow()
-            volume?.notifyVisible(true)
-            volume?.getState()
+            // Only on arrival. These are binder calls, and getState provokes an extra
+            // onStateChanged - so firing them on every press made a held key do twice the work
+            // per event, on the main thread, which is where the jank was.
+            if (wasHidden) {
+                volume?.notifyVisible(true)
+                volume?.getState()
+            }
             animate(target = levelNow, fadeTo = 1f)
             // Wide on arrival, then narrow  -  and only on arrival. A press while the bar is already
             // up must not widen it again: the widening is an entrance, not a reaction.
@@ -254,25 +259,30 @@ class AuroraVolumeDialog : VolumeDialog {
             levelMax = s.levelMax
             view?.icon = iconFor(stream)
 
-            // Mute is a state, so the indicator for it has to be one that persists. The bar's wide
-            // form is where indicators live, so a muted bar stays wide instead of narrowing away from
-            // the only thing saying it is silent. section 6, and the reason it is not simply an icon swap:
-            // the icon fades out below 35% width, which is where the bar spends most of its life.
-            val wasMuted = mutedNow
-            mutedNow = s.muted
-            applyMuteToView()
-            if (mutedNow != wasMuted) {
-                if (mutedNow) {
-                    handler.removeCallbacks(narrowRunnable)
-                    animateWidth(1f)
-                } else if (shown) {
-                    scheduleNarrow()
-                }
-            }
 
             // While a finger is down it owns the level. Every setStreamVolume during a drag comes back
             // here as a state change, and re-animating toward it would put a spring between the finger
             // and the bar - which is exactly the lag a direct control must not have.
+            // mutedNow is updated BEFORE the drag guard, and that ordering is the fix for a real
+            // bug. Dragging to the bottom makes Android mute the stream, but the guard below used to
+            // return first, so the muted state pushed during the drag was discarded. Nothing changed
+            // afterwards, so no further state arrived, and the bar narrowed with no slash - visible
+            // when dragging to minimum and never when dragging to maximum, because only one end
+            // mutes.
+            //
+            // What waits for the finger is the STYLING, not the knowledge.
+            val wasMuted = mutedNow
+            mutedNow = s.muted
+            if (mutedNow != wasMuted) {
+                applyMuteToView()
+                if (mutedNow) {
+                    handler.removeCallbacks(narrowRunnable)
+                    if (!dragging) animateWidth(1f)
+                } else if (shown && !dragging) {
+                    scheduleNarrow()
+                }
+            }
+
             if (dragging) {
                 // Deliberately does NOT arm the dismiss timer.
                 //
@@ -508,7 +518,7 @@ class AuroraVolumeDialog : VolumeDialog {
      * it replaced, so each one stayed in the registry and kept being ticked. A run of presses left
      * dozens of finished animations behind, every frame ticked all of them, and the bar visibly
      * lagged behind the keys - worse the longer the run, which is exactly the case
-     * `volume-overlay.md` §4 calls the normal one rather than an edge case.
+     * `volume-overlay.md` ??4 calls the normal one rather than an edge case.
      */
     private fun springOrNull(
         previous: AnimationHandle?,
@@ -807,7 +817,7 @@ class AuroraVolumeDialog : VolumeDialog {
          * The entrance shape. Wider so an icon fits, and taller so the growth reads as one gesture
          * rather than a bar that only got fatter.
          */
-        const val WIDE_W_DP = 34f
+        const val WIDE_W_DP = 42f
         const val WIDE_H_DP = 210f
 
         /**

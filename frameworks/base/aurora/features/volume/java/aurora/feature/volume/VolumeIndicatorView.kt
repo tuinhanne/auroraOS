@@ -19,6 +19,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.CornerPathEffect
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
@@ -94,6 +95,14 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
     private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
+    /**
+     * The speaker's body. Its corners are rounded by a path effect rather than by hand.
+     *
+     * A cone drawn as six straight segments has six sharp points, and at this size they read as
+     * crude rather than as precise - reported from a device as the icon looking rough. A corner
+     * radius applied to the whole path softens every joint at once, including the two acute ones
+     * at the cone's mouth where hand-rounding is most fiddly.
+     */
     private val iconFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val iconStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
@@ -168,8 +177,26 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
 
         val s = tw * ICON_FRACTION
         val h = s / 2f
-        val cx = left + tw / 2f
         val cy = bottom - tw / 2f - (tw - s) / 2f
+
+        // How many waves the level deserves. Computed here rather than at the draw site because the
+        // glyph's width depends on it, and the glyph has to be centred as a whole.
+        val waves = if (icon != null || slash01 >= 0.5f) 0 else when {
+            level <= 0.02f -> 0
+            level < 0.40f -> 1
+            level < 0.75f -> 2
+            else -> 3
+        }
+
+        // Centre the WHOLE glyph, not the cone.
+        //
+        // The speaker is asymmetric: its body runs from -0.95h to +0.05h and the waves extend to the
+        // right. With three waves the pair balances; with none, centring the cone alone leaves the
+        // icon visibly pushed left - reported as the speaker not sitting in the middle when the
+        // waves are gone. So the extent is measured including whatever waves are present, and the
+        // glyph is shifted to put THAT centre on the track's.
+        val rightMost = if (waves == 0) h * 0.05f else h * (0.05f + 0.45f + 0.30f * (waves - 1))
+        val cx = left + tw / 2f - (h * -0.95f + rightMost) / 2f
 
         // Dark over the white fill, white over the dim track. A fixed colour vanishes at one end of
         // the range, which only shows up when someone actually turns the volume down.
@@ -200,7 +227,9 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             cone.lineTo(cx - h * 0.45f, cy + h * 0.30f)
             cone.lineTo(cx - h * 0.95f, cy + h * 0.30f)
             cone.close()
+            iconFill.pathEffect = cornerSoftening(h)
             canvas.drawPath(cone, iconFill)
+            iconFill.pathEffect = null
 
             // Waves, and the slash replaces them rather than crossing them.
             //
@@ -210,18 +239,10 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
             //
             // Thresholds rather than a continuous count, because an arc that fades in over one
             // volume step reads as a rendering artefact rather than as a third wave arriving.
-            if (slash01 < 0.5f) {
-                val waves = when {
-                    level <= 0.02f -> 0
-                    level < 0.40f -> 1
-                    level < 0.75f -> 2
-                    else -> 3
-                }
-                for (i in 0 until waves) {
-                    val r = h * (0.45f + 0.30f * i)
-                    arcRect.set(cx + h * 0.05f - r, cy - r, cx + h * 0.05f + r, cy + r)
-                    canvas.drawArc(arcRect, -50f, 100f, false, iconStroke)
-                }
+            for (i in 0 until waves) {
+                val r = h * (0.45f + 0.30f * i)
+                arcRect.set(cx + h * 0.05f - r, cy - r, cx + h * 0.05f + r, cy + r)
+                canvas.drawArc(arcRect, -50f, 100f, false, iconStroke)
             }
         }
 
@@ -237,7 +258,22 @@ internal class VolumeIndicatorView(context: Context) : View(context) {
         canvas.drawLine(x0, y0, x0 + (x1 - x0) * slash01, y0 + (y1 - y0) * slash01, iconStroke)
     }
 
+    /** Reused per size, because allocating a path effect every frame would be per-frame garbage. */
+    private var softeningFor: Float = -1f
+    private var softening: CornerPathEffect? = null
+
+    private fun cornerSoftening(h: Float): CornerPathEffect {
+        if (h != softeningFor || softening == null) {
+            softeningFor = h
+            softening = CornerPathEffect(h * CORNER_SOFTNESS)
+        }
+        return softening!!
+    }
+
     private companion object {
+        /** How much of the speaker's half-height becomes corner radius. */
+        const val CORNER_SOFTNESS = 0.22f
+
         /** Icon size as a fraction of the track width, leaving a visible margin inside the pill. */
         const val ICON_FRACTION = 0.55f
 
